@@ -157,9 +157,3 @@ docker exec google-integrated-server python3 -c "from app.db import init_db; ini
 ## Related Repositories
 
 - **[mysquad-n8n-workflows](https://github.com/Adekunle-1/mysquad-n8n-workflows)** — n8n automation workflows
-
----
-
-## License
-
-MIT
