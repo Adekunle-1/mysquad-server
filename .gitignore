@@ -7,6 +7,7 @@ MYSQUAP FILES/
 MyGuy_API_Frontend_Brief.md
 DEPLOYMENT_DOCUMENTATION.md
 How to modify scripts.md
+README2.md
 
 # ── Secrets — never commit these ─────────────────────────────
 .env
