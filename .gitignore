@@ -1,0 +1,49 @@
+# ── Old versions — exclude entirely ──────────────────────────
+Google-Integrated - V1/
+Google-Integrated - V2/
+Google-Integrated - V3/
+my-guy-media-server/
+MYSQUAP FILES/
+MyGuy_API_Frontend_Brief.md
+DEPLOYMENT_DOCUMENTATION.md
+How to modify scripts.md
+
+# ── Secrets — never commit these ─────────────────────────────
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Python credential/config files
+config.py
+secrets.py
+**/credentials.json
+**/service_account*.json
+**/token.json
+**/google_credentials*.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Docker — never commit override files with real values
+docker-compose.override.yml
+docker-compose.prod.yml
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# ── OS ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
