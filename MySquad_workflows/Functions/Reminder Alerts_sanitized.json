@@ -1,0 +1,702 @@
+{
+  "name": "Reminder Alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const reminder = $('Fetch Due Reminders').item.json;\n\n// Log to database or error table\nreturn {\n  json: {\n    reminder_id: reminder.id,\n    chat_id: reminder.chat_id,\n    error: 'WhatsApp send failed',\n    timestamp: new Date().toISOString(),\n    retry_count: (reminder.retry_count || 0) + 1\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        208
+      ],
+      "id": "__NODE_1__",
+      "name": "Log Failed Send"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $json.should_create_next }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        832,
+        -16
+      ],
+      "id": "__NODE_2__",
+      "name": "Should Create Next?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $json.messages }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $json.result.text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        128
+      ],
+      "id": "__NODE_3__",
+      "name": "Check Send Success"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $('Fetch Due Reminders').item.json.is_recurring }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        48
+      ],
+      "id": "__NODE_4__",
+      "name": "Is Recurring?"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ \n  $json.minutes_overdue > 2 \n    ? 'Ask if user completed: \\\"' + $json.reminder_text + '\\\"'\n    : $json.minutes_overdue > 0\n      ? 'Quick reminder about: \\\"' + $json.reminder_text + '\\\"'\n      : 'Send reminder: \\\"' + $json.reminder_text + '\\\"'\n}}",
+        "options": {
+          "systemMessage": "=You are MyGuy's reminder notification composer.\n\nUSER INFO:\n- Name: {{ $json.user_name }}\n- Language: {{ $json.user_language }}\n- Minutes Overdue: {{ $json.minutes_overdue }}\n\nTASK:\nCreate a SHORT (1 sentence), friendly reminder message.\n\nRULES:\n1. Match language: {{ $json.user_language }}\n   - \"en\" = English\n   - \"pidgin\" = Nigerian Pidgin\n2. NEVER mix languages\n3. Maximum 1 sentence\n4. Use appropriate emoji (max 2)\n5. Be warm and encouraging\n\nMESSAGE TYPES:\n\nON-TIME (minutes_overdue = 0):\n- English: \"Time to {{task}}! \ud83d\udccc\"\n- Pidgin: \"Na time to {{task}} o! \ud83d\udccc\"\n\nSLIGHTLY OVERDUE (1-2 mins):\n- English: \"Quick reminder: {{task}} \ud83d\udd14\"\n- Pidgin: \"Abeg no forget: {{task}} \ud83d\udd14\"\n\nOVERDUE QUESTION (>2 mins - rare):\n- English: \"Did you get to {{task}}? \u2705\"\n- Pidgin: \"You don do {{task}}? \u2705\"\n\nREMINDER TEXT: {{ $json.reminder_text }}\n\nOUTPUT: Only the message text, nothing else."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -128,
+        128
+      ],
+      "id": "__NODE_5__",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE table_1\ncolumn_1 jsonb_set(\n  COALESCE(metadata, '{}'::jsonb),\n  '{retry_count}',\n  to_jsonb((COALESCE(metadata->>'retry_count', '0')::int + 1))\n),\nupdated_at = NOW()\ncolumn_2 $1\nAND (COALESCE(metadata->>'retry_count', '0')::int < 3);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        640,
+        208
+      ],
+      "id": "__NODE_6__",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Reminder Alerts Workflow",
+        "height": 528,
+        "width": 1728,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -496,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "__NODE_7__",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -128,
+        320
+      ],
+      "id": "__NODE_8__",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "__GROQ_CRED_ID",
+          "name": "Groq API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE table_1\ncolumn_3 'sent',\n    last_sent_at = NOW(),\n    updated_at = NOW()\ncolumn_2 '={{ $('Fetch Due Reminders').item.json.id }}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1024,
+        160
+      ],
+      "id": "__NODE_9__",
+      "name": "Mark Current as Sent",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "myguy_reminders",
+          "mode": "list",
+          "cachedResultName": "myguy_reminders"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "reminder_text": "={{ $('Calculate Next Time').item.json.reminder_text }}",
+            "reminder_time": "={{ $('Calculate Next Time').item.json.next_reminder_time }}",
+            "reminder_type": "={{ $('Calculate Next Time').item.json.reminder_type }}",
+            "status": "pending",
+            "is_recurring": "={{ $('Calculate Next Time').item.json.is_recurring }}",
+            "metadata": "={{ $('Calculate Next Time').item.json.metadata }}",
+            "next_run_time": "={{ $('Calculate Next Time').item.json.next_reminder_time }}",
+            "last_sent_at": "=null",
+            "user_id": "REDACTED"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "user_id",
+              "displayName": "user_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reminder_text",
+              "displayName": "reminder_text",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reminder_time",
+              "displayName": "reminder_time",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "next_run_time",
+              "displayName": "next_run_time",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reminder_type",
+              "displayName": "reminder_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "is_recurring",
+              "displayName": "is_recurring",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "metadata",
+              "displayName": "metadata",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_sent_at",
+              "displayName": "last_sent_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1024,
+        -16
+      ],
+      "id": "__NODE_10__",
+      "name": "Create Next Occurrence",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the original reminder data from table_2 Due Reminders node\nconst reminder = $('Fetch Due Reminders').item.json;\nconst currentTime = new Date(reminder.next_run_time);\nconst metadata = reminder.metadata || {};\n\n// If not recurring, don't create next occurrence\nif (!reminder.is_recurring) {\n  return {\n    json: {\n      chat_id: reminder.chat_id,\n      reminder_text: reminder.reminder_text,\n      reminder_type: reminder.reminder_type,\n      is_recurring: false,\n      metadata: metadata,\n      next_reminder_time: null,\n      should_create_next: false\n    }\n  };\n}\n\n// Get interval from table_3\nconst intervalMinutes = metadata.interval_minutes;\n\n// Validate interval exists\nif (!intervalMinutes || intervalMinutes <= 0) {\n  console.error('Recurring reminder missing interval_minutes in metadata:', reminder.id);\n  return {\n    json: {\n      chat_id: reminder.chat_id,\n      reminder_text: reminder.reminder_text,\n      reminder_type: reminder.reminder_type,\n      is_recurring: reminder.is_recurring,\n      metadata: metadata,\n      next_reminder_time: null,\n      should_create_next: false,\n      error: 'Missing interval_minutes in metadata'\n    }\n  };\n}\n\n// Calculate next occurrence\nconst nextTime = new Date(currentTime);\nnextTime.setMinutes(nextTime.getMinutes() + intervalMinutes);\n\n// Check if we've reached the 'until' time (if specified)\nlet shouldCreateNext = true;\nif (metadata.until) {\n  const untilTime = new Date(metadata.until);\n  if (nextTime > untilTime) {\n    shouldCreateNext = false;\n  }\n}\n\nreturn {\n  json: {\n    // Original reminder fields\n    chat_id: reminder.chat_id,\n    reminder_text: reminder.reminder_text,\n    reminder_type: reminder.reminder_type,\n    is_recurring: reminder.is_recurring,\n    metadata: metadata,\n    \n    // Calculated fields\n    next_reminder_time: nextTime.toISOString(),\n    should_create_next: shouldCreateNext\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        -16
+      ],
+      "id": "__NODE_11__",
+      "name": "Calculate Next Time"
+    },
+    {
+      "parameters": {
+        "phoneNumberId": "REDACTED_NUMERIC_ID",
+        "recipientPhoneNumber": "={{ $('Fetch Due Reminders').item.json.phone_no }}",
+        "template": "reminder_message|en",
+        "components": {
+          "component": [
+            {
+              "bodyParameters": {
+                "parameter": [
+                  {
+                    "text": "={{ $('Fetch Due Reminders').item.json.user_name }}"
+                  },
+                  {
+                    "text": "={{ $json.output }}"
+                  },
+                  {
+                    "text": "={{ $('Fetch Due Reminders').item.json.minutes_overdue > 0 ? ($('Fetch Due Reminders').item.json.minutes_overdue + ' mins overdue') : 'Due now' }}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        16
+      ],
+      "id": "__NODE_12__",
+      "name": "Send Reminder via WhatsApp",
+      "webhookId": "__WEBHOOK_1__",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "__WHATSAPP_CRED_ID",
+          "name": "WhatsApp API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  r.*,\n  u.username as user_name,\n  u.phone_no as phone_no,\n  u.telegram_id as telegram_id,\n  u.interests as user_interests,\n  u.last_language_style as user_language,\n  CASE \n    WHEN r.next_run_time < (NOW() AT TIME ZONE 'Africa/Lagos') THEN \n      EXTRACT(EPOCH FROM (NOW() AT TIME ZONE 'Africa/Lagos') - r.next_run_time)::INTEGER / 60\n    ELSE 0\n  END as minutes_overdue\nFROM table_1 r\nJOIN table_4 u ON r.user_id = u.user_id\nWHERE r.status = 'pending'\n  AND r.next_run_time <= (NOW() AT TIME ZONE 'Africa/Lagos') + INTERVAL '2 minutes'\n  AND r.next_run_time > (NOW() AT TIME ZONE 'Africa/Lagos') - INTERVAL '2 minutes'\n  AND (r.last_sent_at IS NULL OR r.last_sent_at < r.next_run_time)\nORDER BY r.next_run_time ASC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -288,
+        128
+      ],
+      "id": "__NODE_13__",
+      "name": "Fetch Due Reminders",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -448,
+        128
+      ],
+      "id": "__NODE_14__",
+      "name": "Every Minute"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Fetch Due Reminders').item.json.telegram_id }}",
+        "text": "=Hey {{ $('Fetch Due Reminders').item.json.user_name }}\n\n{{ $json.output }}\n{{ $('Fetch Due Reminders').item.json.minutes_overdue > 0 ? ($('Fetch Due Reminders').item.json.minutes_overdue + ' mins overdue') : 'Due now' }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        160,
+        256
+      ],
+      "id": "__NODE_15__",
+      "name": "Send a text message",
+      "webhookId": "__WEBHOOK_2__",
+      "credentials": {
+        "telegramApi": {
+          "id": "__TELEGRAM_CRED_ID",
+          "name": "Telegram Credentials"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Log Failed Send": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Create Next?": {
+      "main": [
+        [
+          {
+            "node": "Mark Current as Sent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Next Occurrence",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Current as Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Send Success": {
+      "main": [
+        [
+          {
+            "node": "Is Recurring?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Failed Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Recurring?": {
+      "main": [
+        [
+          {
+            "node": "Calculate Next Time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Current as Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder via WhatsApp",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Next Time": {
+      "main": [
+        [
+          {
+            "node": "Should Create Next?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder via WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Check Send Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Due Reminders": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every Minute": {
+      "main": [
+        [
+          {
+            "node": "Fetch Due Reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        [
+          {
+            "node": "Check Send Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "__VERSION_ID__",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "__INSTANCE_ID__"
+  },
+  "id": "__WORKFLOW_ID__",
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-03-21T15:18:01.170352+00:00",
+    "original_name": "Reminder Alerts",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "myguy_reminders": "table_1",
+      "Fetch": "table_2",
+      "metadata": "table_3",
+      "myguy_users": "table_4"
+    },
+    "columns_renamed": {
+      "metadata": "column_1",
+      "id": "column_2",
+      "status": "column_3"
+    }
+  }
+}

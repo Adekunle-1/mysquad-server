@@ -1,0 +1,249 @@
+{
+  "name": "Speedy Sub workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"message\": \"a string\",\n  \"phonenumber\": 123,\n  \"id\": null\n}"
+      },
+      "id": "__NODE_1__",
+      "typeVersion": 1.1,
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        -384,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-image-url-exists",
+              "leftValue": "={{ !!$json.id }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -160,
+        -160
+      ],
+      "id": "__NODE_2__",
+      "name": "Image exists?"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        368,
+        -272
+      ],
+      "id": "__NODE_3__",
+      "name": "Download Image",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=[URL]",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "image",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "phoneNo",
+              "value": "={{ '0' + $('When Executed by Another Workflow').item.json.phonenumber.toString().replace(/^234/, '') }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $('When Executed by Another Workflow').item.json.message }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        656,
+        -272
+      ],
+      "id": "__NODE_4__",
+      "name": "POST to Speedy (with image)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=[URL]",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "={{ $json.message }}"
+            },
+            {
+              "name": "phoneNo",
+              "value": "={{ '0' + $json.phonenumber.toString().replace(/^234/, '') }}\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        96,
+        -48
+      ],
+      "id": "__NODE_5__",
+      "name": "POST to Speedy (no image)"
+    },
+    {
+      "parameters": {
+        "resource": "media",
+        "operation": "mediaUrlGet",
+        "mediaGetId": "={{ $json.id }}"
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        96,
+        -272
+      ],
+      "id": "__NODE_6__",
+      "name": "Download Audio1",
+      "webhookId": "__WEBHOOK_1__",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "__WHATSAPP_CRED_ID",
+          "name": "WhatsApp API Credentials"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Image exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image exists?": {
+      "main": [
+        [
+          {
+            "node": "Download Audio1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST to Speedy (no image)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "POST to Speedy (with image)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to Speedy (with image)": {
+      "main": [
+        []
+      ]
+    },
+    "POST to Speedy (no image)": {
+      "main": [
+        []
+      ]
+    },
+    "Download Audio1": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "__VERSION_ID__",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "__INSTANCE_ID__"
+  },
+  "id": "__WORKFLOW_ID__",
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-03-21T15:18:01.183971+00:00",
+    "original_name": "Speedy Sub workflow",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {},
+    "columns_renamed": {}
+  }
+}

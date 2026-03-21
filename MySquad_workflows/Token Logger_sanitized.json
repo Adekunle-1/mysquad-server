@@ -1,0 +1,314 @@
+{
+  "name": "Token Logger",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "execution_id"
+            },
+            {
+              "name": "source"
+            },
+            {
+              "name": "user_id"
+            },
+            {
+              "name": "phone_no"
+            },
+            {
+              "name": "Agent"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "__NODE_1__",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        0
+      ],
+      "id": "__NODE_2__",
+      "name": "Wait",
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "authentication": "REDACTED",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "REDACTED_OPAQUE_TOKEN",
+          "mode": "list",
+          "cachedResultName": "Token Usage Log",
+          "cachedResultUrl": "[URL]"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "[URL]"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.date }}",
+            "Source": "={{ $json.source }}",
+            "User id": "REDACTED",
+            "Phone no": "REDACTED",
+            "Input Token": "REDACTED",
+            "Output Token": "REDACTED",
+            "Total Token": "REDACTED",
+            "Tools Count": "={{ $json.tools_count }}",
+            "Tool name": "={{ $json.tool_names }}",
+            "Agent": "={{ $json.agent }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "User id",
+              "displayName": "User id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Phone no",
+              "displayName": "Phone no",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Input Token",
+              "displayName": "Input Token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Output Token",
+              "displayName": "Output Token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total Token",
+              "displayName": "Total Token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tool name",
+              "displayName": "Tool name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tools Count",
+              "displayName": "Tools Count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Agent",
+              "displayName": "Agent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        880,
+        0
+      ],
+      "id": "__NODE_3__",
+      "name": "Append Token Usage",
+      "credentials": {
+        "googleApi": {
+          "id": "__GOOGLE_CRED_ID",
+          "name": "Google API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const execData = $json.data?.resultData?.runData;\nconst triggerData = $('When Executed by Another Workflow').first().json;\n\nconst groqRuns = execData?.['Groq Chat Model'] || [];\nconst tokenTotals = groqRuns.reduce((acc, run) => {\n  const usage = run?.data?.ai_languageModel?.[0]?.[0]?.json?.tokenUsage;\n  if (!usage) return acc;\n  return {\n    input: acc.input + (usage.promptTokens ?? 0),\n    output: acc.output + (usage.completionTokens ?? 0),\n    total: acc.total + (usage.totalTokens ?? 0),\n  };\n}, { input: null, output: null, total: null });\n\nconst hasTokens = groqRuns.some(\n  run => run?.data?.ai_languageModel?.[0]?.[0]?.json?.tokenUsage\n);\n\nconst skipNodes = new Set([\n  'Groq Chat Model',\n  'Vision Agent',\n  'MyGuy AI Agent',\n  'Postgres Chat Memory',\n  'Incoming Payload',\n  'Prepare for logger',\n  \"Call 'Token Logger'\",\n  'Respond To Input',\n]);\n\nconst toolsCalled = Object.entries(execData || {})\n  .filter(([nodeName, runs]) =>\n    !skipNodes.has(nodeName) &&\n    runs.some(run => run?.data?.ai_tool || run?.inputOverride?.ai_tool)\n  )\n  .flatMap(([nodeName, runs]) =>\n    runs.map(run => ({\n      tool: nodeName,\n      status: run.executionStatus,\n      executionTime: run.executionTime,\n      ...(run.inputOverride?.ai_tool?.[0]?.[0]?.json?.message && {\n        input: run.inputOverride.ai_tool[0][0].json.message\n      }),\n      ...(run.data?.ai_tool?.[0]?.[0]?.json?.message && {\n        output: run.data.ai_tool[0][0].json.message\n      }),\n      ...(run.metadata?.subExecution?.executionId && {\n        subExecutionId: run.metadata.subExecution.executionId\n      }),\n    }))\n  );\n\nreturn {\n  json: {\n    date: new Date().toISOString(),\n    source: triggerData.source,\n    agent: triggerData.Agent,\n    user_id: triggerData.user_id,\n    phone_no: triggerData.phone_no,\n    ...(hasTokens && {\n      input_tokens: tokenTotals.input,\n      output_tokens: tokenTotals.output,\n      total_tokens: tokenTotals.total,\n    }),\n    ...(toolsCalled.length > 0 && {\n      tools_count: toolsCalled.length,\n      tool_names: toolsCalled.map(t => t.tool).join(', '),\n    }),\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "__NODE_4__",
+      "name": "Prepare for Google Sheet"
+    },
+    {
+      "parameters": {
+        "jsCode": "const execData = $json.data?.resultData?.runData;\nconst triggerData = $('When Executed by Another Workflow').first().json;\n\nconst groqRuns = execData?.['Groq Chat Model'] || [];\nconst tokenTotals = groqRuns.reduce((acc, run) => {\n  const usage = run?.data?.ai_languageModel?.[0]?.[0]?.json?.tokenUsage;\n  if (!usage) return acc;\n  return {\n    input: acc.input + (usage.promptTokens ?? 0),\n    output: acc.output + (usage.completionTokens ?? 0),\n    total: acc.total + (usage.totalTokens ?? 0),\n  };\n}, { input: null, output: null, total: null });\n\nconst hasTokens = groqRuns.some(\n  run => run?.data?.ai_languageModel?.[0]?.[0]?.json?.tokenUsage\n);\n\nconst skipNodes = new Set([\n  'Groq Chat Model',\n  'Postgres Chat Memory',\n  'MyGuy AI Agent',\n  'Vision Agent',\n  'Incoming Payload',\n  'Prepare for logger',\n  \"Call 'Token Logger'\",\n  'Respond To Input'\n]);\n\nconst toolsCalled = Object.entries(execData || {})\n  .filter(([nodeName]) => !skipNodes.has(nodeName))\n  .flatMap(([nodeName, runs]) =>\n    runs.map(run => ({\n      tool: nodeName,\n      status: run.executionStatus,\n      executionTime: run.executionTime,\n      ...(run.inputOverride?.ai_tool?.[0]?.[0]?.json?.message && {\n        input: run.inputOverride.ai_tool[0][0].json.message\n      }),\n      ...(run.data?.ai_tool?.[0]?.[0]?.json?.message && {\n        output: run.data.ai_tool[0][0].json.message\n      }),\n      ...(run.metadata?.subExecution?.executionId && {\n        subExecutionId: run.metadata.subExecution.executionId\n      }),\n    }))\n  );\n\nreturn {\n  json: {\n    date: new Date().toISOString(),\n    source: triggerData.source,\n    agent: triggerData.Agent,\n    user_id: triggerData.user_id,\n    phone_no: triggerData.phone_no,\n    ...(hasTokens && {\n      input_tokens: tokenTotals.input,\n      output_tokens: tokenTotals.output,\n      total_tokens: tokenTotals.total,\n    }),\n    ...(toolsCalled.length > 0 && {\n      tools_count: toolsCalled.length,\n      tool_names: toolsCalled.map(t => t.tool).join(', '),\n    }),\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        304
+      ],
+      "id": "__NODE_5__",
+      "name": "Prepare for Google Sheet1"
+    },
+    {
+      "parameters": {
+        "url": "=[URL] $json.execution_id }}?includeData=true",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-API-KEY",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        464,
+        0
+      ],
+      "id": "__NODE_6__",
+      "name": "Execution extractor"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Execution extractor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for Google Sheet": {
+      "main": [
+        [
+          {
+            "node": "Append Token Usage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execution extractor": {
+      "main": [
+        [
+          {
+            "node": "Prepare for Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "__VERSION_ID__",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "__INSTANCE_ID__"
+  },
+  "id": "__WORKFLOW_ID__",
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-03-21T15:18:01.266969+00:00",
+    "original_name": "Token Logger",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {},
+    "columns_renamed": {}
+  }
+}

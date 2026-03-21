@@ -1,0 +1,20 @@
+server:
+  port: 5671
+  host: "0.0.0.0"
+  
+gmail:
+  retry_attempts: 3
+  retry_delay: 1.0
+  max_results: 50
+
+logging:
+  level: "INFO"
+  format: "json"
+
+mcp:
+  heartbeat_interval: 30
+  server_name: "Google Integrated Server"
+  server_version: "1.0.0"
+
+auth:
+  scopes: "calendar gmail"

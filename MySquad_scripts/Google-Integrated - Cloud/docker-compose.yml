@@ -1,0 +1,180 @@
+services:
+  traefik:
+    image: "traefik:latest"
+    restart: always
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entryPoint.permanent=true"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
+      - "--certificatesresolvers.mytlschallenge.acme.email=${SSL_EMAIL}"
+      - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - traefik_data:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - app_network
+
+  postgres:
+    image: pgvector/pgvector:pg15
+    restart: always
+    container_name: postgres
+    ports:
+      - "7469:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: Africa/Lagos
+      PGTZ: Africa/Lagos
+    command: ["postgres", "-c", "timezone=Africa/Lagos"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  google-server:
+    build: ./google-integrated-server
+    container_name: google-integrated-server
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.google-server.rule=Host(`google.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.google-server.tls=true"
+      - "traefik.http.routers.google-server.entrypoints=websecure"
+      - "traefik.http.routers.google-server.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.google-server.service=google-server"
+      - "traefik.http.services.google-server.loadbalancer.server.port=5671"
+    environment:
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+      - DATABASE_URL=${DATABASE_URL}
+      - TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
+      - PORT=${SERVER_PORT}
+    networks:
+      - app_network
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.n8n.rule=Host(`${DOMAIN_NAME}`)"
+      - "traefik.http.routers.n8n.tls=true"
+      - "traefik.http.routers.n8n.entrypoints=websecure"
+      - "traefik.http.routers.n8n.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.n8n.service=n8n"
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+      - "traefik.http.middlewares.n8n-headers.headers.SSLRedirect=true"
+      - "traefik.http.middlewares.n8n-headers.headers.STSSeconds=315360000"
+      - "traefik.http.middlewares.n8n-headers.headers.browserXSSFilter=true"
+      - "traefik.http.middlewares.n8n-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.n8n-headers.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.n8n-headers.headers.SSLHost=${DOMAIN_NAME}"
+      - "traefik.http.middlewares.n8n-headers.headers.STSIncludeSubdomains=true"
+      - "traefik.http.middlewares.n8n-headers.headers.STSPreload=true"
+      - "traefik.http.middlewares.n8n-headers.headers.customFrameOptionsValue=SAMEORIGIN"
+      - "traefik.http.routers.n8n.middlewares=n8n-headers@docker"
+    environment:
+      - N8N_HOST=${DOMAIN_NAME}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - N8N_RUNNERS_ENABLED=true
+      - NODE_ENV=production
+      - WEBHOOK_URL=https://${DOMAIN_NAME}/
+      - TZ=Africa/Lagos
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - N8N_PROXY_HOPS=1
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - /local-files:/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: minio
+    restart: always
+    command: server /data --console-address ':9001'
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.minio-api.rule=Host(`storage.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.minio-api.tls=true"
+      - "traefik.http.routers.minio-api.entrypoints=websecure"
+      - "traefik.http.routers.minio-api.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.minio-api.service=minio-api"
+      - "traefik.http.services.minio-api.loadbalancer.server.port=9000"
+      - "traefik.http.routers.minio-console.rule=Host(`storage-console.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.minio-console.tls=true"
+      - "traefik.http.routers.minio-console.entrypoints=websecure"
+      - "traefik.http.routers.minio-console.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.minio-console.service=minio-console"
+      - "traefik.http.services.minio-console.loadbalancer.server.port=9001"
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  myguy-media-server:
+    build: ./myguy-media-server
+    container_name: myguy-media-server
+    restart: always
+    depends_on:
+      minio:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.media-server.rule=Host(`media.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.media-server.tls=true"
+      - "traefik.http.routers.media-server.entrypoints=websecure"
+      - "traefik.http.routers.media-server.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.media-server.service=media-server"
+      - "traefik.http.services.media-server.loadbalancer.server.port=5672"
+    env_file:
+      - ./myguy-media-server/.env
+    networks:
+      - app_network
+
+volumes:
+  traefik_data:
+  n8n_data:
+  postgres_data:
+  minio_data:
+
+networks:
+  app_network:
+    driver: bridge

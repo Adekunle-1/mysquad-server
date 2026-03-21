@@ -1,0 +1,1136 @@
+{
+  "name": "MySquadAPP",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Main Workflow\nOnboarding and Conversation",
+        "height": 672,
+        "width": 1632
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        80,
+        240
+      ],
+      "typeVersion": 1,
+      "id": "__NODE_1__",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "# Table Viewers",
+        "height": 352,
+        "width": 1616,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        96,
+        -128
+      ],
+      "typeVersion": 1,
+      "id": "__NODE_2__",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "Delete from table_1\ncolumn_1 '1244409014'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1936,
+        -48
+      ],
+      "id": "__NODE_3__",
+      "name": "Postgres Action",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "Select * FROM table_2\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        560,
+        0
+      ],
+      "id": "__NODE_4__",
+      "name": "RSS TABLE",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "Select * from table_3\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
+      "id": "__NODE_5__",
+      "name": "REMINDERS",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM table_1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        880,
+        0
+      ],
+      "id": "__NODE_6__",
+      "name": "USERS",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "Select * FROM table_4\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1184,
+        0
+      ],
+      "id": "__NODE_7__",
+      "name": "CHAT HISTORY",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "REDACTED",
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Created FIle').item.json.id }}",
+          "mode": "id"
+        },
+        "options": {
+          "googleFileConversion": {
+            "conversion": {
+              "docsToFormat": "application/pdf",
+              "sheetsToFormat": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
+          }
+        }
+      },
+      "id": "__NODE_8__",
+      "name": "Download File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        320,
+        -592
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleApi": {
+          "id": "__GOOGLE_CRED_ID",
+          "name": "Google API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chunkOverlap": 400
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        752,
+        -256
+      ],
+      "id": "__NODE_9__",
+      "name": "Character Text Splitter"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "authentication": "REDACTED",
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "REDACTED_OPAQUE_TOKEN",
+          "mode": "list",
+          "cachedResultName": "N8n vector",
+          "cachedResultUrl": "[URL]"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        144,
+        -592
+      ],
+      "id": "__NODE_10__",
+      "name": "Created FIle",
+      "credentials": {
+        "googleApi": {
+          "id": "__GOOGLE_CRED_ID",
+          "name": "Google API Credentials"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "__NODE_11__",
+      "name": "Extract PDF Text1",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        496,
+        -592
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "content": "# Function: Docs RAG",
+        "height": 544,
+        "width": 960,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        96,
+        -688
+      ],
+      "id": "__NODE_12__",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-embedding-001"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        576,
+        -400
+      ],
+      "id": "__NODE_13__",
+      "name": "Embeddings Google Gemini1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "__GOOGLE_CRED_ID",
+          "name": "Google API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "Select * FROM table_5\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1504,
+        0
+      ],
+      "id": "__NODE_14__",
+      "name": "EMBEDDINGS",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.data || $json.text || $json.concatenated_data }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "=file_id",
+                "value": "={{ $('Created FIle').item.json.id }}"
+              },
+              {
+                "name": "file_title",
+                "value": "={{ $('Created FIle').item.json.name }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "__NODE_15__",
+      "name": "Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1,
+      "position": [
+        752,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": "myguy_embeddings",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [
+        720,
+        -592
+      ],
+      "id": "__NODE_16__",
+      "name": "Embedding",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "user_id",
+              "value": "={{ $('Webhook1').item.json.body.user_id || $('Webhook1').item.json.body.chat_id}}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "text",
+              "value": "={{ $if($('Code in JavaScript1').isExecuted, $('Code in JavaScript1').item.json.text, $if($('Format Audio to Text1').isExecuted, $('Format Audio to Text1').item.json.body.text.body, $('Webhook1').item.json.body.text.body || $('Webhook1').item.json.body.image.caption || '')) }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "message_type",
+              "value": "={{ $('Webhook1').item.json.body.message_type }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "username",
+              "value": "={{ $('Webhook1').item.json.body.username }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "phone_no",
+              "value": "={{ $('Webhook1').item.json.body.phone_no }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "caption",
+              "value": "={{ $if($('Code in JavaScript1').isExecuted, $('Code in JavaScript1').item.json.caption, $('Webhook1').item.json.body.image.caption || '') }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "image_id",
+              "value": "={{ $json.body.image.file_key || ''}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1088,
+        448
+      ],
+      "id": "__NODE_17__",
+      "name": "Fields mapping1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the transcription text from table_6\nconst transcriptionText = $json.text || \"\";\n\n// Get the original webhook data\nconst webhookData = $('Webhook1').first().json;\n\n// Format to match what Fields mapping expects\nreturn {\n  json: {\n    body: {\n      user_id: webhookData.body.user_id,\n      username: webhookData.body.username,\n      phone_no: webhookData.body.phone_no,\n      timestamp: webhookData.body.timestamp,\n      message_type: \"text\",\n      text: {\n        body: transcriptionText\n      }\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        336
+      ],
+      "id": "__NODE_18__",
+      "name": "Format Audio to Text1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.audio }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "voice"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $json.body.text }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "text"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $json.body.image }}",
+                    "rightValue": "image",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "image"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        320,
+        432
+      ],
+      "id": "__NODE_19__",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-large-v3-turbo"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        704,
+        336
+      ],
+      "id": "__NODE_20__",
+      "name": "Transcription model",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "user_chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        144,
+        448
+      ],
+      "id": "__NODE_21__",
+      "name": "Webhook1",
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"response\": {{JSON.stringify($json.output)}},\n  \"user_id\": \"{{ $('Fields mapping1').item.json.user_id }}\",\n  \"username\": \"{{ $('Webhook1').item.json.body.username }}\"\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1472,
+        448
+      ],
+      "id": "__NODE_22__",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "lio6BUwKC4DLPUsb",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/lio6BUwKC4DLPUsb",
+          "cachedResultName": "MyGuy Sub Workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "user_id": "REDACTED",
+            "text": "={{ $json.text }}",
+            "message_type": "={{ $json.message_type }}",
+            "username": "={{ $json.username }}",
+            "phone_no": "REDACTED",
+            "image_id": "={{ $json.image_id || '' }}",
+            "caption": "={{ $json.caption || '' }}",
+            "source": "app"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "user_id",
+              "displayName": "user_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "text",
+              "displayName": "text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "message_type",
+              "displayName": "message_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "username",
+              "displayName": "username",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "phone_no",
+              "displayName": "phone_no",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "image_id",
+              "displayName": "image_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "caption",
+              "displayName": "caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1280,
+        448
+      ],
+      "id": "__NODE_23__",
+      "name": "Call My Guy1"
+    },
+    {
+      "parameters": {
+        "url": "=[URL] $json.body.audio.file_key }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        512,
+        336
+      ],
+      "id": "__NODE_24__",
+      "name": "Audio Download"
+    },
+    {
+      "parameters": {
+        "url": "=[URL] $json.body.image.file_key }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        512,
+        544
+      ],
+      "id": "__NODE_25__",
+      "name": "Image Dwwnload"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Webhook1').item.json.body.image.caption \n   ? 'Analyze this image. The user wrote: \"' + $('Webhook1').item.json.body.image.caption + '\". ' \n   : 'Analyze this image. ' }}\n\nReturn ONLY a JSON object:\n{\n  \"is_financial\": boolean,\n  \"financial_type\": \"account_details\" | \"receipt\" | \"transfer_screenshot\" | \"balance_screenshot\" | \"none\",\n  \"accounts\": [{\"account_number\": \"string\", \"bank_name\": \"string\", \"account_holder_name\": \"string or null\"}],\n  \"count\": number,\n  \"image_description\": \"brief description of what the image shows\",\n  \"suggested_response_context\": \"what the user likely wants help with\"\n}\n\nis_financial = true ONLY for: bank account numbers, receipts, transfer screenshots, balance screenshots, transaction records.\nis_financial = false for: general photos, food, people, places, memes, casual images.\n\nNigerian banks: Access Bank, Zenith Bank, GTBank, First Bank, UBA, Sterling Bank, Ecobank, Fidelity Bank, FCMB, Stanbic IBTC, Union Bank, Keystone Bank, Polaris Bank, Wema Bank, Kuda Bank, Opay, Palmpay, Moniepoint.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        640,
+        544
+      ],
+      "id": "__NODE_26__",
+      "name": "Vision Agent"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "wNrTo7md7Otf1NbK0f1B5",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/wNrTo7md7Otf1NbK0f1B5",
+          "cachedResultName": "Token Logger"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "source": "app",
+            "user_id": "REDACTED",
+            "phone_no": "REDACTED",
+            "execution_id": "={{ $execution.id }}",
+            "Agent": "Vision Agent"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "execution_id",
+              "displayName": "execution_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "user_id",
+              "displayName": "user_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "phone_no",
+              "displayName": "phone_no",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Agent",
+              "displayName": "Agent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1088,
+        736
+      ],
+      "id": "__NODE_27__",
+      "name": "Call 'Token Logger'"
+    },
+    {
+      "parameters": {
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        640,
+        752
+      ],
+      "id": "__NODE_28__",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "__GROQ_CRED_ID",
+          "name": "Groq API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        736
+      ],
+      "id": "__NODE_29__",
+      "name": "Wait",
+      "webhookId": "__WEBHOOK_2__"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.item.json.output;\n\nlet extractedData;\ntry {\n  extractedData = JSON.parse(response);\n} catch {\n  const match = response.match(/\\{[\\s\\S]*\\}/);\n  if (match) extractedData = JSON.parse(match[0]);\n  else throw new Error('Could not parse agent response');\n}\n\nconst accounts = extractedData.accounts || [];\naccounts.forEach(account => {\n  if (account.account_number) {\n    const cleaned = String(account.account_number).replace(/\\D/g, '');\n    account.account_number_cleaned = cleaned;\n    account.is_valid = cleaned.length === 10;\n  }\n});\n\nconst isFinancial = extractedData.is_financial === true;\nconst caption = $('Webhook1').item.json.body.image.caption || '';\n\nreturn [{\n  json: {\n    is_financial: isFinancial,\n    financial_type: extractedData.financial_type || 'none',\n    accounts,\n    count: accounts.length,\n    text: isFinancial\n      ? accounts.length > 0\n        ? `User sent a financial image. Extracted accounts: ${JSON.stringify(accounts)}. Type: ${extractedData.financial_type}. Context: ${extractedData.suggested_response_context}`\n        : `User sent a financial image (${extractedData.financial_type}) but no accounts extracted. Description: ${extractedData.image_description}`\n      : `User sent an image. Description: ${extractedData.image_description}.${caption ? ' Caption: ' + caption : ''}`,\n    image_description: extractedData.image_description,\n    suggested_response_context: extractedData.suggested_response_context,\n    // Pass through user context for Fields mapping\n    caption: caption\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        544
+      ],
+      "id": "__NODE_30__",
+      "name": "Code in JavaScript1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Created FIle": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text1": {
+      "main": [
+        [
+          {
+            "node": "Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Embedding",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Embedding",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fields mapping1": {
+      "main": [
+        [
+          {
+            "node": "Call My Guy1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Audio to Text1": {
+      "main": [
+        [
+          {
+            "node": "Fields mapping1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "Audio Download",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fields mapping1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Image Dwwnload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcription model": {
+      "main": [
+        [
+          {
+            "node": "Format Audio to Text1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call My Guy1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audio Download": {
+      "main": [
+        [
+          {
+            "node": "Transcription model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image Dwwnload": {
+      "main": [
+        [
+          {
+            "node": "Vision Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vision Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Vision Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Call 'Token Logger'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Fields mapping1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "__VERSION_ID__",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "__INSTANCE_ID__"
+  },
+  "id": "__WORKFLOW_ID__",
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-03-21T15:18:01.071554+00:00",
+    "original_name": "MySquadAPP",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "myguy_users": "table_1",
+      "myguy_daily_rss_cache": "table_2",
+      "myguy_reminders": "table_3",
+      "myguy_chat_histories": "table_4",
+      "myguy_embeddings": "table_5",
+      "Groq": "table_6"
+    },
+    "columns_renamed": {
+      "phone_no": "column_1"
+    }
+  }
+}

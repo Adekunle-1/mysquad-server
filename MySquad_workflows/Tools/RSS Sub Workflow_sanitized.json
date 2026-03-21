@@ -1,0 +1,185 @@
+{
+  "name": "RSS Sub Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"Interest\": \"a string\"\n}"
+      },
+      "id": "__NODE_1__",
+      "typeVersion": 1.1,
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        -96,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const interest = $json.Interest.toLowerCase().trim();\nconst feedUrl = `[URL]\n\nreturn {\n  json: {\n    interest,\n    feedUrl,\n    source: 'google_news'\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        128
+      ],
+      "id": "__NODE_2__",
+      "name": "RSS Mapping"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.feedUrl }}",
+        "options": {
+          "ignoreSSL": true
+        }
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        336,
+        128
+      ],
+      "id": "__NODE_3__",
+      "name": "RSS Read"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        784,
+        128
+      ],
+      "id": "__NODE_4__",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all RSS items\nconst items = $input.all();\n\n// If nothing came in, return empty list\nif (items.length === 0) {\n  return [];\n}\n\n// Date cutoff: last 1 day\nconst cutoffDate = new Date();\ncutoffDate.setDate(cutoffDate.getDate() - 5);\n\n// Filter \u2192 Sort \u2192 Limit \u2192 Return raw RSS items\nconst articles = items\n  .filter(item => {\n    const data = item.json;\n\n    // Must have title and link\n    if (!data.title || !data.link) return false;\n\n    // Skip error pages\n    const title = String(data.title).toLowerCase();\n    if (title.includes('404') || title.includes('error')) return false;\n\n    // Skip old articles (if date exists)\n    if (data.pubDate) {\n      const pubDate = new Date(data.pubDate);\n      if (isNaN(pubDate)) return false;\n      if (pubDate < cutoffDate) return false;\n    }\n\n    return true;\n  })\n  // Newest first\n  .sort((a, b) => {\n    const dateA = a.json.pubDate ? new Date(a.json.pubDate).getTime() : 0;\n    const dateB = b.json.pubDate ? new Date(b.json.pubDate).getTime() : 0;\n    return dateB - dateA;\n  })\n  // Top 3\n  .slice(0, 3)\n  // Return EVERYTHING RSS provided\n  .map(item => ({\n    json: item.json\n  }));\n\nreturn articles;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        128
+      ],
+      "id": "__NODE_5__",
+      "name": "Clean and Filter articles"
+    },
+    {
+      "parameters": {
+        "jsCode": "const url = $json.link;\n\nfunction isValidShortUrl(result) {\n  if (!result || typeof result !== 'string') return false;\n  const trimmed = result.trim();\n  return trimmed.startsWith('http') && \n         !trimmed.includes('error') && \n         !trimmed.includes('Error') &&\n         !trimmed.includes('database') &&\n         !trimmed.includes('invalid') &&\n         trimmed.length < 100;\n}\n\nlet tinyResult = null, bitlyResult = null, isgdResult = null;\n\n// 1. Try TinyURL\ntry {\n  tinyResult = await helpers.request({\n    method: 'GET',\n    url: `[URL]\n  });\n  if (isValidShortUrl(tinyResult)) {\n    return { json: { ...$json, link: tinyResult.trim(), shortener: 'tinyurl' } };\n  }\n} catch (e) { tinyResult = `ERROR: ${e.message}`; }\n\n// 2. Try Bitly\ntry {\n  const bitlyRes = await helpers.request({\n    method: 'POST',\n    url: '[URL]',\n    headers: {\n      'Authorization': `REDACTED_BEARER_TOKEN`,\n      'Content-Type': 'application/json'\n    },\n    body: JSON.stringify({ long_url: url })\n  });\n  const data = typeof bitlyRes === 'string' ? JSON.parse(bitlyRes) : bitlyRes;\n  bitlyResult = data.link || JSON.stringify(data);\n  if (data.link && isValidShortUrl(data.link)) {\n    return { json: { ...$json, link: data.link, shortener: 'bitly' } };\n  }\n} catch (e) { bitlyResult = `ERROR: ${e.message}`; }\n\n// 3. Try is.gd\ntry {\n  isgdResult = await helpers.request({\n    method: 'GET',\n    url: `[URL]\n  });\n  if (isValidShortUrl(isgdResult)) {\n    return { json: { ...$json, link: isgdResult.trim(), shortener: 'isgd' } };\n  }\n} catch (e) { isgdResult = `ERROR: ${e.message}`; }\n\n// 4. Fallback + debug\nreturn { json: { \n  ...$json, \n  link: url, \n  shortener: 'original',\n  debug: { tinyResult, bitlyResult, isgdResult }\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        144
+      ],
+      "id": "__NODE_6__",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "Interest": "tech"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "RSS Mapping",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Mapping": {
+      "main": [
+        [
+          {
+            "node": "RSS Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read": {
+      "main": [
+        [
+          {
+            "node": "Clean and Filter articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean and Filter articles": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "__VERSION_ID__",
+  "meta": {
+    "instanceId": "__INSTANCE_ID__"
+  },
+  "id": "__WORKFLOW_ID__",
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-03-21T15:18:01.177829+00:00",
+    "original_name": "RSS Sub Workflow",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {},
+    "columns_renamed": {}
+  }
+}
