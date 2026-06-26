@@ -1,0 +1,675 @@
+{
+  "updatedAt": "2026-05-31T08:55:22.400Z",
+  "createdAt": "2026-05-29T15:47:57.047Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Agent D \u2014 Personal & Utility",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\"tenant_id\": \"uuid\", \"business_id\": \"uuid\", \"chat_id\": \"813122587\", \"sender_id\": \"813122587\", \"bot_token\": \"token\", \"conversation_id\": \"uuid\", \"text\": \"how much balance do I have left\", \"message_type\": \"text\", \"display_name\": \"Nelly\", \"username\": \"\", \"image_id\": \"\", \"caption\": \"\", \"source\": \"telegram\"}"
+      },
+      "id": "__NODE_1__",
+      "name": "Incoming Payload",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        768,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT tc.*,\n  pi.access_token AS bot_token,\n  (SELECT json_agg(json_build_object('key', m.key, 'value', m.value))\n   FROM table_1 m\n   WHERE m.business_id = tc.business_id\n     AND m.is_active = true\n     AND (m.expires_at IS NULL OR m.expires_at > now())\n  ) as agent_memories\nFROM table_2 tc\nJOIN table_3 pi\n  ON pi.business_id = tc.business_id AND pi.platform = 'telegram'\nWHERE tc.tenant_id   = $1::uuid\n  AND tc.business_id = $2::uuid",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Incoming Payload').first().json.tenant_id,\n  $('Incoming Payload').first().json.business_id\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1008,
+        336
+      ],
+      "id": "__NODE_2__",
+      "name": "Load Owner Context",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Load Owner Context').first().json;\nconst incoming = $('Incoming Payload').first().json;\n\nfunction safeParse(v, fb) {\n  if (v === null || v === undefined || v === '') return fb;\n  if (typeof v === 'string') { try { return JSON.parse(v) ?? fb; } catch(e) { return fb; } }\n  return v;\n}\nfunction asObject(v) { const p = safeParse(v, {}); return (p && typeof p === 'object' && !Array.isArray(p)) ? p : {}; }\n\nconst toneProfile   = asObject(ctx.tone_profile);\nconst agentName     = ctx.agent_name     || 'MyGuy';\nconst businessName  = ctx.business_name  || 'your business';\nconst ownerName     = ctx.preferred_name || ctx.full_name || incoming.display_name || 'Boss';\nconst toneSummary   = toneProfile.tone_summary || 'friendly and professional';\nconst replyLanguage = String(ctx.reply_language || ctx.last_language_style || 'en').toLowerCase();\n\nfunction formatLocalNow() {\n  try { return new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date()); }\n  catch(e) { return new Date().toISOString(); }\n}\n\nconst sep = '\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550';\n\nconst systemPrompt = `You are ${agentName}, the personal utility agent for ${ownerName}. Be warm, direct, and concise.\n\n${sep}\nOWNER CONTEXT\n${sep}\nOwner: ${ownerName}\nBusiness: ${businessName}\nDefault reply language: ${replyLanguage === 'pidgin' ? 'Pidgin' : 'English'}\nCurrent Lagos time: ${formatLocalNow()}\n\n${sep}\nVOICE & PERSONALITY\n${sep}\nYou are ${agentName} \u2014 not a bot, not a system, not an assistant. You are a sharp, warm person who works for ${ownerName}.\n\nENGLISH REGISTER:\nWrite the way a smart, friendly Nigerian professional texts. Short. Direct. Warm but not gushy.\n- Lead with the result, not the process: \"You've got \u20a62,400 left.\" not \"I have retrieved your balance.\"\n- Use contractions: \"I've\", \"it's\", \"you're\", \"can't\", \"won't\"\n- Light affirmations are fine: \"Got it.\", \"Sure.\", \"On it.\" \u2014 but never more than 2 words before the actual answer.\n\nPIDGIN REGISTER:\nMirror the owner's Pidgin exactly. Do not tone it down or formalize it.\nNatural Pidgin patterns to use:\n- \"You get \u20a62,400 remain\" not \"Your balance is \u20a62,400\"\n- \"Dollar don reach 1,600 today\" not \"The exchange rate is currently 1,600\"\n- \"Traffic bad for Third Mainland \u2014 go Lekki-Epe instead\" not \"There is heavy traffic on Third Mainland Bridge\"\n- \"Na 30 minutes e go take\" not \"It will take approximately 30 minutes\"\nDetect Pidgin from: dey, abeg, wetin, oya, wahala, sha, una, dem, na, abi, wan, e don, how far, no wahala, make we, sef.\nIf 2 or more markers appear \u2192 respond in full Pidgin. Switch back if owner switches to English.\nNEVER mix Pidgin and English in the same reply.\n\nBANNED PHRASES (never use these):\n- \"Certainly!\", \"Of course!\", \"Absolutely!\", \"Sure thing!\"\n- \"I'd be happy to...\", \"I'd be glad to...\", \"I'm here to help\"\n- \"I have successfully retrieved...\", \"The operation was successful\"\n- \"As per your request\", \"Please find below\"\n- \"Thank you for your patience\", \"Is there anything else I can help you with?\"\n- Any opener that restates what the owner just said before answering\n\nREACTION STYLE:\nBad: \"I have retrieved your MySquad balance. Your current balance is \u20a62,400.\"\nGood: \"You've got \u20a62,400 left on MySquad.\"\n\nBad: \"I have successfully updated your preferred name to Nelly.\"\nGood: \"Done \u2014 I'll call you Nelly from table_4 on.\"\n\nBad: \"I have searched the web and found the following information about the dollar rate.\"\nGood: \"Dollar's at \u20a61,580 today (Binance P2P rate).\"\n\nEMOJI USE:\nSparingly. One per message max, only when it adds warmth not decoration.\n\n${sep}\nSCOPE \u2014 WHAT THIS AGENT HANDLES\n${sep}\nThis agent handles personal and utility requests only:\n- Owner's preferred name change\n- MySquad platform balance and recharge\n- Credit usage history and spend breakdown\n- Web search \u2014 live news, exchange rates, prices, rankings, current events\n- Traffic and directions\n\nIMPORTANT BOUNDARIES:\n- \"How much balance do I have on MySquad?\" \u2192 Get Balance & Recharge Info\n- \"What's in my bank account?\" or \"Transfer money\" \u2192 NOT this agent. Tell the owner to message Speedy directly.\n- \"How much have I spent on images?\" \u2192 Get Credit Usage History\n- \"Dollar rate today\" \u2192 Web Search Tool\n- \"Traffic on Third Mainland?\" \u2192 Get Traffic Tool\n\n${sep}\nTOOL ROUTING\n${sep}\nUpdate table_5 Tool \u2014 owner wants to change what you call them. Only when they explicitly give a new name. Ask if missing.\nGet Balance & Recharge Info \u2014 MySquad platform balance, top-up instructions, pricing questions. Never answer these from table_6\nGet Credit Usage History \u2014 spend breakdown by action type for the last 30 days.\nWeb Search Tool \u2014 any live or current information: news, rates, prices, rankings, sports results, appointments. If the answer could have changed recently, search.\nGet Traffic Tool \u2014 commute questions, route comparisons, travel time estimates. Always ask for origin and destination if missing.\n\n${sep}\nBALANCE & RECHARGE RULES\n${sep}\nAlways use Get Balance & Recharge Info for platform balance. Never invent a number.\nWhen presenting balance, state the amount clearly and mention recharge if balance is low.\nPresent recharge bank details exactly as returned by the tool \u2014 never paraphrase account numbers.\n\n${sep}\nWEB SEARCH RULES\n${sep}\nUse for anything that could have changed: exchange rates, news, prices, sports, appointments, rankings.\nAfter results return, answer conversationally from table_7 snippets \u2014 do not dump raw JSON.\nKeep it to 2-3 sentences. If the owner wants more detail they will ask.\n\n${sep}\nTRAFFIC RULES\n${sep}\nIf origin or destination is missing, ask for both before calling.\nAfter the tool returns, summarise: travel time, traffic level, best route, and one alternative if available.\nKeep it practical \u2014 the owner is probably about to leave somewhere.\n\n${sep}\nHARD RULES\n${sep}\nNever answer balance, credit usage, or recharge details from table_8 \u2014 always call the tool.\nNever handle bank transfers, personal bank balance, airtime, or bill payments \u2014 those belong to Speedy.\nNever invent URLs, exchange rates, or news headlines.`;\n\nreturn {\n  json: {\n    system_prompt:    systemPrompt,\n    text:             incoming.text || incoming.caption || '',\n    caption:          incoming.caption || '',\n    tenant_id:        incoming.tenant_id,\n    business_id:      incoming.business_id,\n    chat_id:          incoming.chat_id,\n    sender_id:        incoming.sender_id,\n    user_id:          incoming.tenant_id,\n    display_name:     incoming.display_name || '',\n    username:         incoming.username || '',\n    source:           incoming.source || 'telegram',\n    message_type:     incoming.message_type || 'text',\n    image_id:         incoming.image_id || '',\n    bot_token:        incoming.bot_token || ctx.bot_token || '',\n    conversation_id:  incoming.conversation_id || '',\n    is_owner:         true,\n  }\n};"
+      },
+      "id": "__NODE_3__",
+      "name": "Build Agent D Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text || $json.caption || '' }}",
+        "options": {
+          "systemMessage": "={{ $json.system_prompt }}"
+        }
+      },
+      "id": "__NODE_4__",
+      "name": "Agent D \u2014 Personal & Utility",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        1488,
+        336
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        1424,
+        544
+      ],
+      "id": "__NODE_5__",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "__GROQ_CRED_ID",
+          "name": "Groq API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=owner_{{ $json.chat_id }}_{{ $json.tenant_id }}_{{ $json.business_id }}",
+        "tableName": "msq_chat_histories",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        1584,
+        544
+      ],
+      "id": "__NODE_6__",
+      "name": "Agent D Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Change what the agent calls the owner.\n\nWHEN TO USE:\n- \"Call me [name]\"\n- \"My name is [name]\"\n- \"Change my name to [name]\"\n\nPARAMETER:\n- preferred_name (string, required)\n\nRULES:\n- Only use when the owner explicitly gives a new name.\n- If the name is missing, ask what they want to be called.\n- Do not guess a name.",
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "msq_tenants",
+          "mode": "list",
+          "cachedResultName": "msq_tenants"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "updated_at": "={{ $now.toISO() }}",
+            "preferred_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('preferred_name', ``, 'string') }}",
+            "id": "={{ $json.tenant_id }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "telegram_id",
+              "displayName": "telegram_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "whatsapp_no",
+              "displayName": "whatsapp_no",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "phone_no",
+              "displayName": "phone_no",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "full_name",
+              "displayName": "full_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "preferred_name",
+              "displayName": "preferred_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "username",
+              "displayName": "username",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "password_hash",
+              "displayName": "password_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "location",
+              "displayName": "location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "onboarding_completed",
+              "displayName": "onboarding_completed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_language_style",
+              "displayName": "last_language_style",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_seen_at",
+              "displayName": "last_seen_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1776,
+        544
+      ],
+      "id": "__NODE_7__",
+      "name": "Update table_5 Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Authoritative source for MySquad balance, recharge instructions, and pricing.\n\nUSE THIS TOOL FOR:\n- current MySquad balance\n- top-up or recharge questions\n- platform pricing questions\n- \"how much do I have left?\"\n- \"how do I top up?\"\n- \"how much does image generation cost?\"\n\nDO NOT USE THIS TOOL FOR:\n- personal bank balance or transfers\n  -> use Call Speedy Tool\n\nRULES:\n- Always use this tool instead of memory for:\n  - platform balance\n  - bank details for top-up\n  - recharge instructions\n  - service pricing\n- Never invent these details outside the tool.",
+        "operation": "executeQuery",
+        "query": "SELECT balance, plan, plan_expires_at\nFROM table_9\ncolumn_1 $1::uuid",
+        "options": {
+          "queryReplacement": "={{ [$json.user_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2064,
+        544
+      ],
+      "id": "__NODE_8__",
+      "name": "Get Balance & Recharge Info",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Show how the owner's MySquad naira has been spent.\n\nWHEN TO USE:\n- \"Where did my money go?\"\n- \"Show my usage\"\n- \"What did I spend on?\"\n- \"How many images have I generated?\"\n\nRULES:\n- Present grouped totals conversationally.\n- Use this for spend breakdown, not for current balance.",
+        "operation": "executeQuery",
+        "query": "SELECT \n  action_type,\n  COUNT(*)                        AS times_used,\n  SUM(credits_used)               AS total_naira_spent\nFROM table_10\ncolumn_1 $1::uuid\n  column_2 0\n  column_3= now() - interval '30 days'\nGROUP BY action_type\nORDER BY total_naira_spent DESC",
+        "options": {
+          "queryReplacement": "={{ [$json.user_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2336,
+        544
+      ],
+      "id": "__NODE_9__",
+      "name": "Get Credit Usage History",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "=Search the web for current facts or news.\n\nWHEN TO USE:\n- live news\n- prices and rates\n- exchange rates\n- crypto prices\n- \"who is\", \"current\", \"today\", \"latest\", \"still\"\n- rankings, appointments, sports results, changing real-world facts\n\nRULE OF THUMB:\nIf the answer could have changed recently, use this tool.\n\nEXAMPLES:\n- \"Who is the US president?\"\n- \"Dollar rate today\"\n- \"Bitcoin price now\"\n- \"Latest Arsenal news\"\n- \"Who won the match today?\"\n\nPARAMETER:\n- Interest (short search query)\n\nRULES:\n- Do not answer changing facts from table_8 when this tool should be used.\n- After results return, answer conversationally from table_7 snippets.",
+        "workflowId": {
+          "__rl": true,
+          "value": "GwbVd9Sf2aNPWViH",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/GwbVd9Sf2aNPWViH",
+          "cachedResultName": "MySquad RSS Search Workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Interest": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Interest', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "Interest"
+          ],
+          "schema": [
+            {
+              "id": "Interest",
+              "displayName": "Interest",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        2624,
+        544
+      ],
+      "id": "__NODE_10__",
+      "name": "Web Search Tool"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Get live traffic and route details.\n\nWHEN TO USE:\n- commute questions\n- traffic and travel-time questions\n- route comparisons\n- \"how long to get to...\"\n- \"what route should I use?\"\n\nREQUIRED:\n- origin\n- destination\n\nRULES:\n- If either origin or destination is missing, ask first.\n- After the tool returns, summarize travel time, traffic level, main route, and better alternatives if any.",
+        "url": "[URL]",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "origin",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "destination",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters1_Value', ``, 'string') }}"
+            },
+            {
+              "name": "departure_time",
+              "value": "={{ Math.floor(Date.now() / 1000) }}"
+            },
+            {
+              "name": "traffic_model",
+              "value": "best_guess"
+            },
+            {
+              "name": "alternatives",
+              "value": "true"
+            },
+            {
+              "name": "key",
+              "value": "REDACTED_GOOGLE_KEY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        2896,
+        544
+      ],
+      "id": "__NODE_11__",
+      "name": "Get Traffic Tool"
+    },
+    {
+      "parameters": {
+        "jsCode": "const outputRaw = $('Agent D \u2014 Personal & Utility').first().json.output || '';\nconst incomingData = $('Incoming Payload').first().json;\n\nlet bufferMessage = null;\nlet caption = null;\nlet genPrompt = null;\nlet genMode = null;\nlet response_type = 'text';\nlet output = outputRaw;\nlet mediaType = null;\n\n// Notification flags\nlet hasOrderConfirmed = false;\nlet confirmedOrderNumber = null;\nlet confirmedCustomerChatId = null;\nlet paymentConfirmed = false;\nlet paymentOrderNumber = null;\nlet broadcastMessage = null;\n\n// Extract [BUFFER: ...]\nconst bufferMatch = outputRaw.match(/\\[BUFFER:\\s*(.*?)\\]/s);\nif (bufferMatch) {\n  bufferMessage = bufferMatch[1].trim();\n}\n\n// Extract [CAPTION: ...]\nconst captionMatch = outputRaw.match(/\\[CAPTION:\\s*(.*?)\\]/s);\nif (captionMatch) {\n  caption = captionMatch[1].trim();\n}\n\n// Extract [ORDER_CONFIRMED: ...]\nconst orderConfirmedMatch = outputRaw.match(/\\[ORDER_CONFIRMED:\\s*([\\w-]+)\\s*\\|\\s*(\\d+)\\]/);\nif (orderConfirmedMatch) {\n  hasOrderConfirmed = true;\n  confirmedOrderNumber = orderConfirmedMatch[1].trim();\n  confirmedCustomerChatId = orderConfirmedMatch[2].trim();\n}\n\n// Extract [PAYMENT_CONFIRMED: ...]\nconst paymentConfirmedMatch = outputRaw.match(/\\[PAYMENT_CONFIRMED:\\s*([\\w-]+)\\s*(?:\\|\\s*(\\d+))?\\]/);\nif (paymentConfirmedMatch) {\n  paymentConfirmed = true;\n  paymentOrderNumber = paymentConfirmedMatch[1].trim();\n  if (paymentConfirmedMatch[2]) {\n    confirmedCustomerChatId = paymentConfirmedMatch[2].trim();\n  }\n}\n\n// Extract [BROADCAST: ...]\nconst broadcastMatch = outputRaw.match(/\\[BROADCAST:\\s*([\\s\\S]*?)\\]/);\nif (broadcastMatch) {\n  broadcastMessage = broadcastMatch[1].trim().substring(0, 1000);\n}\n\n// Extract legacy generation tags\nconst imageGenMatch    = outputRaw.match(/\\[IMAGE_GEN:\\s*(.*?)\\]/s);\nconst videoGenMatch    = outputRaw.match(/\\[VIDEO_GEN:\\s*(.*?)\\]/s);\nconst image2imageMatch = outputRaw.match(/\\[IMAGE2IMAGE:\\s*(.*?)\\]/s);\nconst image2videoMatch = outputRaw.match(/\\[IMAGE2VIDEO:\\s*(.*?)\\]/s);\n\nif (imageGenMatch) {\n  response_type = 'image'; genPrompt = imageGenMatch[1].trim(); genMode = 'text_to_image'; mediaType = 'image';\n} else if (videoGenMatch) {\n  response_type = 'video'; genPrompt = videoGenMatch[1].trim(); genMode = 'text_to_video'; mediaType = 'video';\n} else if (image2imageMatch) {\n  response_type = 'image'; genPrompt = image2imageMatch[1].trim(); genMode = 'image_to_image'; mediaType = 'image';\n} else if (image2videoMatch) {\n  response_type = 'video'; genPrompt = image2videoMatch[1].trim(); genMode = 'image_to_video'; mediaType = 'video';\n}\n\n// Check for FAL_MEDIA_REQUEST\nconst hasFalRequest = outputRaw.includes('[FAL_MEDIA_REQUEST:');\n\nif (hasFalRequest) {\n  response_type = 'image';\n\n  const falStart = outputRaw.indexOf('[FAL_MEDIA_REQUEST:');\n  if (falStart !== -1) {\n    const braceStart = outputRaw.indexOf('{', falStart);\n    if (braceStart !== -1) {\n      let braceCount = 0;\n      let braceEnd = -1;\n      let inString = false;\n      let escapeNext = false;\n\n      for (let i = braceStart; i < outputRaw.length; i++) {\n        const char = outputRaw[i];\n        if (escapeNext) { escapeNext = false; continue; }\n        if (char === '\\\\') { escapeNext = true; continue; }\n        if (char === '\"') { inString = !inString; continue; }\n        if (!inString) {\n          if (char === '{') braceCount++;\n          if (char === '}') {\n            braceCount--;\n            if (braceCount === 0) { braceEnd = i; break; }\n          }\n        }\n      }\n\n      if (braceEnd !== -1) {\n        const falContent = outputRaw.substring(braceStart, braceEnd + 1);\n\n        const modeMatch   = falContent.match(/\"generation_mode\"\\s*:\\s*\"([^\"]+)\"/);\n        if (modeMatch) genMode = modeMatch[1];\n\n        const promptMatch = falContent.match(/\"prompt\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"/);\n        if (promptMatch) genPrompt = promptMatch[1].replace(/\\\\\"/g, '\"').replace(/\\\\\\\\/g, '\\\\');\n\n        if (genMode === 'text_to_image' || genMode === 'image_to_image') {\n          response_type = 'image'; mediaType = 'image';\n        } else if (genMode === 'text_to_video' || genMode === 'image_to_video') {\n          response_type = 'video'; mediaType = 'video';\n        }\n      }\n    }\n  }\n\n  if (!bufferMessage && genMode) bufferMessage = 'Gimme a sec...';\n  if (!caption && genMode) caption = 'Here you go!';\n\n  return {\n    json: {\n      output: outputRaw,\n      response_type,\n      message_type_in: incomingData.message_type || 'text',\n      gen_prompt: genPrompt,\n      gen_mode: genMode,\n      buffer_message: bufferMessage,\n      caption,\n      has_order_confirmed: hasOrderConfirmed,\n      confirmed_order_number: confirmedOrderNumber,\n      confirmed_customer_chat_id: confirmedCustomerChatId,\n      payment_confirmed: paymentConfirmed,\n      payment_order_number: paymentOrderNumber,\n      broadcast_message: broadcastMessage,\n    }\n  };\n}\n\n// \u2500\u2500 Non-media responses \u2014 clean output \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nlet cleanOutput = outputRaw;\ncleanOutput = cleanOutput\n  .replace(/\\[BUFFER:.*?\\]/s, '')\n  .replace(/\\[CAPTION:.*?\\]/s, '')\n  .replace(/\\[ORDER_CONFIRMED:.*?\\]/s, '')\n  .replace(/\\[PAYMENT_CONFIRMED:.*?\\]/s, '')\n  .replace(/\\[BROADCAST:[\\s\\S]*?\\]/g, '')\n  .trim();\n\nif (!cleanOutput || cleanOutput === '') {\n  cleanOutput = 'Done!';\n}\n\nreturn {\n  json: {\n    output: cleanOutput.trim(),\n    response_type,\n    message_type_in: incomingData.message_type || 'text',\n    gen_prompt: null,\n    gen_mode: null,\n    buffer_message: null,\n    caption: null,\n    has_order_confirmed: hasOrderConfirmed,\n    confirmed_order_number: confirmedOrderNumber,\n    confirmed_customer_chat_id: confirmedCustomerChatId,\n    payment_confirmed: paymentConfirmed,\n    payment_order_number: paymentOrderNumber,\n    broadcast_message: broadcastMessage,\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        336
+      ],
+      "id": "__NODE_12__",
+      "name": "Output Classifier"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst incoming = $('Incoming Payload').first().json;\n\nreturn {\n  json: {\n    output:          data.output,\n    response_type:   data.response_type,\n    message_type_in: data.message_type_in || 'text',\n    gen_prompt:      data.gen_prompt      || null,\n    gen_mode:        data.gen_mode        || null,\n    buffer_message:  data.buffer_message  || null,\n    caption:         data.caption         || null,\n    // Required by main handler\n    bot_token:                  $('Build Agent D Config').first().json.bot_token,\n    chat_id:                    incoming.chat_id,\n    conversation_id:            incoming.conversation_id,\n    tenant_id:                  incoming.tenant_id,\n    user_message:               incoming.text || incoming.caption || '',\n    is_owner:                   true,\n    has_new_order:              data.has_new_order              || false,\n    order_number:               data.order_number               || null,\n    order_summary:              data.order_summary              || null,\n    has_order_confirmed:        data.has_order_confirmed        || false,\n    confirmed_order_number:     data.confirmed_order_number     || null,\n    confirmed_customer_chat_id: data.confirmed_customer_chat_id || null,\n    payment_confirmed:          data.payment_confirmed          || false,\n    payment_order_number:       data.payment_order_number       || null,\n    broadcast_message:          data.broadcast_message          || null,\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        336
+      ],
+      "id": "__NODE_13__",
+      "name": "Respond To Input"
+    }
+  ],
+  "connections": {
+    "Incoming Payload": {
+      "main": [
+        [
+          {
+            "node": "Load Owner Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Owner Context": {
+      "main": [
+        [
+          {
+            "node": "Build Agent D Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Agent D Config": {
+      "main": [
+        [
+          {
+            "node": "Agent D \u2014 Personal & Utility",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent D \u2014 Personal & Utility": {
+      "main": [
+        [
+          {
+            "node": "Output Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Classifier": {
+      "main": [
+        [
+          {
+            "node": "Respond To Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agent D \u2014 Personal & Utility",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent D Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Agent D \u2014 Personal & Utility",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Name Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agent D \u2014 Personal & Utility",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Balance & Recharge Info": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agent D \u2014 Personal & Utility",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Credit Usage History": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agent D \u2014 Personal & Utility",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Search Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agent D \u2014 Personal & Utility",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Traffic Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agent D \u2014 Personal & Utility",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "2bd2c6ab-7838-44a1-a54b-4e0b0112a6fa",
+  "versionCounter": 25,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-29T15:47:57.047Z",
+      "createdAt": "2026-05-29T15:47:57.047Z",
+      "role": "workflow:owner",
+      "workflowId": "p4FEhMU61XsxUEi1",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 2bd2c6ab",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.682523+00:00",
+    "original_name": "MySquad Agent D \u2014 Personal & Utility",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_agent_memory": "table_1",
+      "msq_tenant_context": "table_2",
+      "msq_platform_integrations": "table_3",
+      "now": "table_4",
+      "Name": "table_5",
+      "memory.": "table_6",
+      "the": "table_7",
+      "memory": "table_8",
+      "msq_credits": "table_9",
+      "msq_credit_transactions": "table_10"
+    },
+    "columns_renamed": {
+      "tenant_id": "column_1",
+      "credits_used": "column_2",
+      "created_at": "column_3"
+    }
+  }
+}

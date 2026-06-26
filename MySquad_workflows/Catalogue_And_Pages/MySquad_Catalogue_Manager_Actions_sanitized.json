@@ -1,0 +1,591 @@
+{
+  "updatedAt": "2026-06-08T13:54:39.519Z",
+  "createdAt": "2026-06-02T21:19:57.840Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Catalogue Manager Actions",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "catalogue-manager-actions",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "__NODE_1__",
+      "name": "Actions Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        752
+      ],
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst body = $input.first().json.body || {};\nconst files = $input.first().json.files || {};\n\nconst action = (body.action || '').trim().toLowerCase();\nconst token  = (body.token  || '').trim();\n\nif (!token)  throw new Error('Missing token');\nif (!action) throw new Error('Missing action');\nif (!['add','update','delete'].includes(action)) throw new Error('Unknown action: ' + action);\n\nreturn [{ json: { action, token, body, has_file: !!(files.image || files['image[]']) } }];\n"
+      },
+      "id": "__NODE_2__",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -816,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT tenant_id, business_id FROM table_1 column_1 $1 column_2 now() LIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [$('Route Action').first().json.token] }}"
+        }
+      },
+      "id": "__NODE_3__",
+      "name": "Validate Session",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -576,
+        752
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst input = $('Route Action').first().json;\nconst session = $('Validate Session').first().json;\nif (!session || !session.tenant_id) throw new Error('Invalid or expired session token');\n\nreturn [{ json: {\n  action:      input.action,\n  token:       input.token,\n  body:        input.body,\n  has_file:    input.has_file,\n  tenant_id:   session.tenant_id,\n  business_id: session.business_id\n}}];\n"
+      },
+      "id": "__NODE_4__",
+      "name": "Merge Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "add",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "__NODE_5__",
+      "name": "Switch Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -112,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst ctx = $input.first().json;\nconst body = ctx.body;\nconst productName = (body.product_name || '').trim();\nconst mimeType    = (body.mime_type    || 'image/jpeg').trim();\n\nif (!productName) throw new Error('Missing product_name');\n\nconst slug = productName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');\nconst ext  = mimeType.split('/')[1] || 'jpg';\nconst ts   = Date.now();\nconst objectKey = ctx.tenant_id + '/' + ctx.business_id + '/products/' + slug + '-' + ts + '.' + ext;\nconst minioUrl  = '[URL]' + objectKey;\n\nreturn [{ json: {\n  tenant_id:    ctx.tenant_id,\n  business_id:  ctx.business_id,\n  product_name: productName,\n  mime_type:    mimeType,\n  object_key:   objectKey,\n  minio_url:    minioUrl\n} }];\n"
+      },
+      "id": "__NODE_6__",
+      "name": "Prepare Add",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prepareData = $('Prepare Add').first().json;\nconst webhookItem = $('Actions Webhook').first();\n\n// Binary arrives on the webhook item \u2014 find whichever key was used\nconst binaryData = webhookItem.binary || {};\nconst imageKey = binaryData.image ? 'image'\n  : binaryData['image[]'] ? 'image[]'\n  : Object.keys(binaryData)[0] || null;\n\nif (!imageKey) throw new Error('No image binary found in webhook upload');\n\nreturn [{\n  json: {\n    tenant_id:    prepareData.tenant_id,\n    business_id:  prepareData.business_id,\n    product_name: prepareData.product_name,\n    mime_type:    prepareData.mime_type,\n    object_key:   prepareData.object_key,\n    minio_url:    prepareData.minio_url\n  },\n  binary: {\n    data: binaryData[imageKey]\n  }\n}];"
+      },
+      "id": "__NODE_7__",
+      "name": "Preserve Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "mysquad-assets",
+        "fileName": "={{ $json.object_key }}",
+        "additionalFields": {}
+      },
+      "id": "__NODE_8__",
+      "name": "Upload to MinIO",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        608,
+        544
+      ],
+      "credentials": {
+        "s3": {
+          "id": "__S3_CRED_ID",
+          "name": "s3 Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_2\n  (tenant_id, business_id, product_name, display_name, minio_url, minio_key, mime_type, upload_source, image_type, show_on_store)\nVALUES ($1::uuid, $2::uuid, $3, $3, $4, $5, $6, 'catalogue_manager', 'product', true)\nRETURNING id::text, product_name, display_name, minio_url, price, show_on_store, image_type",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Preserve Binary').first().json.tenant_id,\n  $('Preserve Binary').first().json.business_id,\n  $('Preserve Binary').first().json.product_name,\n  $('Preserve Binary').first().json.minio_url,\n  $('Preserve Binary').first().json.object_key,\n  $('Preserve Binary').first().json.mime_type\n] }}"
+        }
+      },
+      "id": "__NODE_9__",
+      "name": "Save Add to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        848,
+        544
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst row = $input.first().json;\nreturn [{ json: {\n  id:           row.id,\n  product_name: row.product_name,\n  display_name: row.display_name || row.product_name,\n  minio_url:    row.minio_url,\n  price:        row.price || null,\n  show_on_store: true,\n  image_type:   'product'\n}}];\n"
+      },
+      "id": "__NODE_10__",
+      "name": "Return Add",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "__NODE_11__",
+      "name": "Respond Add",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1328,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst ctx = $input.first().json;\nconst body = ctx.body;\nconst id    = (body.id    || '').trim();\nconst field = (body.field || '').trim();\nconst value =  body.value;\n\nif (!id || !field) throw new Error('Missing id or field');\nconst allowed = ['display_name', 'price', 'show_on_store', 'sort_order'];\nif (!allowed.includes(field)) throw new Error('Field not allowed: ' + field);\n\nlet castValue;\nif (field === 'show_on_store') {\n  castValue = (value === 'true' || value === true);\n} else if (field === 'price' || field === 'sort_order') {\n  castValue = (value === '' || value === null || value === undefined) ? null : parseFloat(value);\n} else {\n  castValue = String(value || '');\n}\n\nreturn [{ json: { id, field, castValue, tenant_id: ctx.tenant_id, business_id: ctx.business_id } }];\n"
+      },
+      "id": "__NODE_12__",
+      "name": "Prepare Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE table_2 column_3 CASE WHEN $2 = 'display_name'  THEN $3::text    ELSE display_name  END,\n  price         = CASE WHEN $2 = 'price'          THEN $4::numeric ELSE price         END,\n  show_on_store = CASE WHEN $2 = 'show_on_store'  THEN $5::boolean ELSE show_on_store END,\n  sort_order    = CASE WHEN $2 = 'sort_order'     THEN $6::int     ELSE sort_order    END,\n  updated_at    = now()\ncolumn_4 $1::uuid column_5 $7::uuid\nRETURNING id::text",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Prepare Update').first().json.id,\n  $('Prepare Update').first().json.field,\n  $('Prepare Update').first().json.field === 'display_name'  ? String($('Prepare Update').first().json.castValue ?? '') : null,\n  $('Prepare Update').first().json.field === 'price'         ? $('Prepare Update').first().json.castValue : null,\n  $('Prepare Update').first().json.field === 'show_on_store' ? $('Prepare Update').first().json.castValue : null,\n  $('Prepare Update').first().json.field === 'sort_order'    ? $('Prepare Update').first().json.castValue : null,\n  $('Prepare Update').first().json.tenant_id\n] }}"
+        }
+      },
+      "id": "__NODE_13__",
+      "name": "Execute Update",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        368,
+        752
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":true}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "__NODE_14__",
+      "name": "Respond Update",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        608,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst ctx = $input.first().json;\nconst id = (ctx.body.id || '').trim();\nif (!id) throw new Error('Missing id');\nreturn [{ json: { id, tenant_id: ctx.tenant_id, business_id: ctx.business_id } }];\n"
+      },
+      "id": "__NODE_15__",
+      "name": "Prepare Delete",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM table_2 column_4 $1::uuid column_5 $2::uuid RETURNING id::text",
+        "options": {
+          "queryReplacement": "={{ [$('Prepare Delete').first().json.id, $('Prepare Delete').first().json.tenant_id] }}"
+        }
+      },
+      "id": "__NODE_16__",
+      "name": "Execute Delete",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        368,
+        944
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":true}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "__NODE_17__",
+      "name": "Respond Delete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        608,
+        944
+      ]
+    }
+  ],
+  "connections": {
+    "Actions Webhook": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Validate Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Session": {
+      "main": [
+        [
+          {
+            "node": "Merge Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Context": {
+      "main": [
+        [
+          {
+            "node": "Switch Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Action": {
+      "main": [
+        [
+          {
+            "node": "Prepare Add",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Add": {
+      "main": [
+        [
+          {
+            "node": "Preserve Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preserve Binary": {
+      "main": [
+        [
+          {
+            "node": "Upload to MinIO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to MinIO": {
+      "main": [
+        [
+          {
+            "node": "Save Add to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Add to DB": {
+      "main": [
+        [
+          {
+            "node": "Return Add",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return Add": {
+      "main": [
+        [
+          {
+            "node": "Respond Add",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Update": {
+      "main": [
+        [
+          {
+            "node": "Execute Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Update": {
+      "main": [
+        [
+          {
+            "node": "Respond Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Delete": {
+      "main": [
+        [
+          {
+            "node": "Execute Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Delete": {
+      "main": [
+        [
+          {
+            "node": "Respond Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "a9ce2c80-e1b7-4b15-9b86-ad261cfa4528",
+  "versionCounter": 24,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-06-02T21:19:57.840Z",
+      "createdAt": "2026-06-02T21:19:57.840Z",
+      "role": "workflow:owner",
+      "workflowId": "UAwhP9zQV7xxROZU",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version a9ce2c80",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.799122+00:00",
+    "original_name": "MySquad Catalogue Manager Actions",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_catalogue_sessions": "table_1",
+      "msq_product_images": "table_2"
+    },
+    "columns_renamed": {
+      "token": "column_1",
+      "expires_at": "column_2",
+      "display_name": "column_3",
+      "id": "column_4",
+      "tenant_id": "column_5"
+    }
+  }
+}

@@ -9,6 +9,13 @@ DEPLOYMENT_DOCUMENTATION.md
 How to modify scripts.md
 README2.md
 
+# ── Keep repo scope focused (root-level extras) ─────────────
+Ai discussion eco/
+Google-Integrated - LV/
+my-guy-media-server-LV/
+mysquad-site/
+MySquad Logo.jpeg
+
 # ── Secrets — never commit these ─────────────────────────────
 .env
 .env.*

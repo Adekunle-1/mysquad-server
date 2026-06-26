@@ -1,0 +1,155 @@
+{
+  "updatedAt": "2026-05-31T08:40:13.748Z",
+  "createdAt": "2026-05-31T08:39:57.456Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Error Handler",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "__NODE_1__",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -704,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const err = $input.first().json;\n\nconst workflowName = err.workflow?.name || 'Unknown workflow';\nconst workflowId   = err.workflow?.id   || '\u2014';\nconst nodeName     = err.execution?.lastNodeExecuted || '\u2014';\nconst errorMsg     = err.error?.message || JSON.stringify(err.error || 'Unknown error');\nconst errorStack   = (err.error?.stack || '').split('\\n').slice(0,3).join('\\n');\nconst execId       = err.execution?.id || '\u2014';\nconst execMode     = err.execution?.mode || '\u2014';\nconst ts           = new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });\n\nconst text = `\ud83d\udea8 *MySquad Error Alert*\n\n` +\n  `*Workflow:* ${workflowName}\n` +\n  `*Node:* ${nodeName}\n` +\n  `*Time:* ${ts}\n` +\n  `*Exec ID:* \\`${execId}\\`\n` +\n  `*Mode:* ${execMode}\n\n` +\n  `*Error:*\n\\`\\`\\`\\n${errorMsg}\\n\\`\\`\\`\n\n` +\n  (errorStack ? `*Stack (first 3 lines):*\n\\`\\`\\`\\n${errorStack}\\n\\`\\`\\`` : '');\n\nreturn [{ json: { text } }];"
+      },
+      "id": "__NODE_2__",
+      "name": "Format Error Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "996797292",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "__NODE_3__",
+      "name": "Notify Admin 1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -224,
+        48
+      ],
+      "webhookId": "__WEBHOOK_1__",
+      "credentials": {
+        "telegramApi": {
+          "id": "__TELEGRAM_CRED_ID",
+          "name": "Telegram Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "813122587",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "__NODE_4__",
+      "name": "Notify Admin 2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -224,
+        208
+      ],
+      "webhookId": "__WEBHOOK_2__",
+      "credentials": {
+        "telegramApi": {
+          "id": "__TELEGRAM_CRED_ID",
+          "name": "Telegram Credentials"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Message": {
+      "main": [
+        [
+          {
+            "node": "Notify Admin 1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Admin 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "593279b3-7a5e-4f42-a1fc-3b59169e7168",
+  "versionCounter": 5,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-31T08:39:57.456Z",
+      "createdAt": "2026-05-31T08:39:57.456Z",
+      "role": "workflow:owner",
+      "workflowId": "gmbekEHeofgw6FGi",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 593279b3",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.846139+00:00",
+    "original_name": "MySquad Error Handler",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {},
+    "columns_renamed": {}
+  }
+}

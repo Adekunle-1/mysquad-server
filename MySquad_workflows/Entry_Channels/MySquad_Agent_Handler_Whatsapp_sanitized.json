@@ -1,0 +1,2608 @@
+{
+  "updatedAt": "2026-06-04T14:00:01.232Z",
+  "createdAt": "2026-05-18T09:38:09.315Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Agent Handler (Whatsapp)",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "msq-wa-events",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1136,
+        288
+      ],
+      "id": "__NODE_1__",
+      "name": "Agent Webhook",
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// INPUT credit charges (include LLM cost)\nconst inputCreditMap = {\n  text:    15,\n  audio:   27,   // voice note input\n  image:   18,   // image input\n  file:    18,   // file/PDF input\n  video:    0,   // video input blocked at the source\n  unknown: 15,   // fallback\n};\n\nconst msgType = data.message_type_in || 'text';\nconst inputCredits = inputCreditMap[msgType] ?? 15;\n\nreturn { json: {\n  conversation_id: data.conversation_id,\n  tenant_id:       data.tenant_id,\n  chat_id:         data.chat_id,\n  bot_token:       data.bot_token,\n  user_message:    data.user_message,\n  agent_reply:     data.agent_reply,\n  response_type:   data.response_type,\n  message_type_in: msgType,\n  is_owner:        data.is_owner || false,\n  tokens_used:     0,\n  credits_charged: inputCredits,\n  wa_instance: data.wa_instance || '',\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3088,
+        32
+      ],
+      "id": "__NODE_2__",
+      "name": "Save Messages"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_1 \n  (conversation_id, tenant_id, role, content, tokens_used, credits_charged, platform)\nVALUES\n  ($1, $2, 'user',      $3, 0,  0,   $7),\n  ($1, $2, 'assistant', $4, $5, $6,  $7)",
+        "options": {
+          "queryReplacement": "={{ [$json.conversation_id, $json.tenant_id, $json.user_message, $json.agent_reply, $json.tokens_used, $json.credits_charged, 'whatsapp'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3296,
+        32
+      ],
+      "id": "__NODE_3__",
+      "name": "Write Messages to DB",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=[URL] $('Save Messages').first().json.wa_instance }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $('Save Messages').first().json.chat_id.replace('@s.whatsapp.net', '') }}\",\n  \"text\": \"{{ $('Save Messages').first().json.agent_reply }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3712,
+        112
+      ],
+      "id": "__NODE_4__",
+      "name": "Send Agent Reply",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "=data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        96
+      ],
+      "id": "__NODE_5__",
+      "name": "Transcription model",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const binaryData = item.binary;\n  const binaryKey = Object.keys(binaryData || {})[0]; // Get whatever key exists\n  \n  if (binaryData && binaryKey) {\n    const newBinaryData = { ...binaryData[binaryKey] };\n    newBinaryData.fileName = (newBinaryData.fileName || 'audio.ogg').replace('.oga', '.ogg');\n    newBinaryData.fileExtension = 'ogg';\n    newBinaryData.mimeType = 'audio/ogg';\n    \n    return {\n      json: item.json,\n      binary: {\n        data: newBinaryData\n      }\n    };\n  }\n  \n  return item;\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        96
+      ],
+      "id": "__NODE_6__",
+      "name": "Rename Audio File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const transcriptionText = $json.text || '';\n\nreturn {\n  json: {\n    message: {\n      text: transcriptionText\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        96
+      ],
+      "id": "__NODE_7__",
+      "name": "Format Audio to Text"
+    },
+    {
+      "parameters": {
+        "jsCode": "const groqResponse = $input.first().json;\nconst content = groqResponse.choices?.[0]?.message?.content;\n\nif (!content) {\n  throw new Error('No content in Groq vision response: ' + JSON.stringify(groqResponse));\n}\n\nlet extractedData;\ntry {\n  extractedData = JSON.parse(content);\n} catch {\n  const match = content.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { extractedData = JSON.parse(match[0]); }\n    catch { throw new Error('Could not parse vision response: ' + content); }\n  } else {\n    throw new Error('Could not parse vision response: ' + content);\n  }\n}\n\nconst accounts = extractedData.accounts || [];\naccounts.forEach(account => {\n  if (account.account_number) {\n    const cleaned = String(account.account_number).replace(/\\D/g, '');\n    account.account_number_cleaned = cleaned;\n    account.is_valid = cleaned.length === 10;\n  }\n});\n\nconst isFinancial       = extractedData.is_financial === true;\nconst isProductRef      = extractedData.is_product_reference === true;\nconst imageTypeHint     = extractedData.image_type_hint || 'other';\nconst suggestedName     = extractedData.suggested_name || null;\nconst suggestedCategory = extractedData.suggested_category || null;\nconst productSpecs      = extractedData.product_specs || {};\nconst imageDescription  = extractedData.image_description || '';\nconst caption           = $('Parse WhatsApp Update').first().json.caption || '';\nconst isOwner           = false; // WA handler is customer-only\n\nlet contextText;\n\nif (isFinancial) {\n  contextText = accounts.length > 0\n    ? `User sent a financial image. Extracted accounts: ${JSON.stringify(accounts)}. Type: ${extractedData.financial_type}. Context: ${extractedData.suggested_response_context || ''}`\n    : `User sent a financial image (${extractedData.financial_type}) but no accounts extracted. Description: ${imageDescription}`;\n} else if (isProductRef) {\n  const specsStr = Object.entries(productSpecs)\n    .filter(([,v]) => v)\n    .map(([k,v]) => `${k}: ${v}`)\n    .join(', ');\n  contextText = `Customer sent a product reference image. Description: ${imageDescription}.`\n    + (specsStr ? ` Visible specs: ${specsStr}.` : '')\n    + (caption ? ` They wrote: ${caption}.` : '')\n    + ` [is_product_reference: true]`;\n} else {\n  contextText = `User sent an image. Description: ${imageDescription}.${caption ? ' Caption: ' + caption : ''}`;\n}\n\nreturn [{\n  json: {\n    is_financial:               isFinancial,\n    financial_type:             extractedData.financial_type || 'none',\n    extractedamount:            extractedData.amount_transferred || null,\n    accounts,\n    count:                      accounts.length,\n    text:                       contextText,\n    image_description:          imageDescription,\n    suggested_response_context: extractedData.suggested_response_context || '',\n    caption,\n    image_type_hint:            imageTypeHint,\n    suggested_name:             suggestedName,\n    suggested_category:         suggestedCategory,\n    is_product_reference:       isProductRef,\n    product_specs:              productSpecs,\n    is_owner:                   false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        448
+      ],
+      "id": "__NODE_8__",
+      "name": "Format Vision Output"
+    },
+    {
+      "parameters": {
+        "jsCode": "const update  = $('Parse WhatsApp Update').first().json;\nconst ownerID = $('Fetch Owner ID').first().json;\n\nlet text         = update.text || '';\nlet message_type = update.message_type;\nlet image_description = null;\nlet is_financial = false;\nlet source_image_url = null;\n\n// Audio path\ntry {\n  const audioText = $('Format Audio to Text').first().json.message?.text;\n  if (audioText) { text = audioText; message_type = 'audio'; }\n} catch(e) {}\n\n// Image path\ntry {\n  const vision = $('Format Vision Output').first().json;\n  if (vision && vision.text) {\n    text = vision.text;\n    message_type = 'image';\n    image_description = vision.image_description || null;\n    is_financial = vision.is_financial || false;\n  }\n  const prepVision = $('Prepare Vision Request').first().json;\n  if (prepVision._image_url) source_image_url = prepVision._image_url;\n} catch(e) {}\n\n// File path\ntry {\n  const fileOut = $('Format File Output').first().json;\n  if (fileOut && fileOut.text) { text = fileOut.text; message_type = 'file'; }\n} catch(e) {}\n\nif (!text && update.caption) text = update.caption;\n\nreturn { json: {\n  bot_token:        ownerID.bot_token || '',\n  wa_instance:      update.wa_instance || '',\n  tenant_id:        $('Inject Tenant ID').first().json.tenant_id,\n  business_id:      ownerID.business_id,\n  chat_id:          update.chat_id,\n  sender_id:        update.sender_id,\n  first_name:       update.first_name,\n  text,\n  caption:          update.caption,\n  message_type,\n  image_description,\n  is_financial,\n  is_start:         update.is_start,\n  voice_file_id:    update.voice_file_id,\n  photo_file_id:    update.photo_file_id,\n  source_image_url,\n  platform:         'whatsapp'\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2096,
+        32
+      ],
+      "id": "__NODE_9__",
+      "name": "Normalise Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sub    = $input.first().json;\nconst norm   = $('Normalise Input').first().json;\n\nreturn { json: {\n  agent_reply:     sub.output        || '',\n  response_type:   sub.response_type || 'text',\n  message_type_in: sub.message_type_in || norm.message_type || 'text',\n  conversation_id: sub.conversation_id || $('Upsert Conversation').first().json.conversation_id,\n  tenant_id:       norm.tenant_id,\n  chat_id:         norm.chat_id,\n  bot_token:       norm.bot_token,       // for owner notifications\n  wa_instance:     norm.wa_instance,     // for customer replies\n  user_message:    norm.text || '',\n  is_owner:        false,                // always false on WA\n\n  has_new_order:              sub.has_new_order              || false,\n  order_number:               sub.order_number               || null,\n  order_summary:              sub.order_summary              || null,\n  has_order_confirmed:        sub.has_order_confirmed        || false,\n  confirmed_order_number:     sub.confirmed_order_number     || null,\n  confirmed_customer_chat_id: sub.confirmed_customer_chat_id || null,\n  payment_confirmed:          sub.payment_confirmed          || false,\n  payment_order_number:       sub.payment_order_number       || null,\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2672,
+        32
+      ],
+      "id": "__NODE_10__",
+      "name": "Handle Output"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  t.telegram_id,\n  t.preferred_name,\n  t.full_name,\n  b.business_name,\n  b.business_type,\n  b.business_mode,\n  b.description AS business_description,\n  c.agent_name,\n  pi.access_token AS bot_token\nFROM table_2 t\nLEFT JOIN table_3 b ON b.id = $2::uuid\nLEFT JOIN table_4 c ON c.business_id = b.id\nJOIN table_5 pi\n  ON pi.business_id = b.id AND pi.platform = 'telegram'\nWHERE t.id = $1::uuid",
+        "options": {
+          "queryReplacement": "={{ [$('Inject Tenant ID').first().json.tenant_id, $('Inject Tenant ID').first().json.business_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        -128
+      ],
+      "id": "__NODE_11__",
+      "name": "Fetch Start Context",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=[URL] $('Parse WhatsApp Update').first().json.wa_instance }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=number",
+              "value": "={{ $('Parse WhatsApp Update').first().json.chat_id.replace('@s.whatsapp.net', '') }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Build Welcome Message').first().json.welcome_text }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        592,
+        -128
+      ],
+      "id": "__NODE_12__",
+      "name": "Send Customer Welcome",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.response_type }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "text"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2880,
+        32
+      ],
+      "id": "__NODE_13__",
+      "name": "Output type"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $json.allowed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        784,
+        288
+      ],
+      "id": "__NODE_14__",
+      "name": "Usage Count"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=[URL] $('Parse WhatsApp Update').first().json.wa_instance }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $('Parse WhatsApp Update').first().json.chat_id.replace('@s.whatsapp.net', '') }}\",\n  \"text\": \"{{ $('Usage Count Check').first().json.reason === 'text_hourly_limit' ? 'You have reached the limit of 30 messages per hour. Please wait a while.' : 'Sorry, you have reached the daily limit for this message type.' }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        976,
+        560
+      ],
+      "id": "__NODE_15__",
+      "name": "Send Customer Error",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  t.telegram_id,\n  pi.access_token AS bot_token,\n  b.id AS business_id\nFROM table_2 t\nJOIN table_3 b ON b.id = $2::uuid\nJOIN table_5 pi \n  ON pi.business_id = b.id AND pi.platform = 'telegram'\nWHERE t.id = $1::uuid",
+        "options": {
+          "queryReplacement": "={{ [$('Inject Tenant ID').first().json.tenant_id, $('Inject Tenant ID').first().json.business_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        288
+      ],
+      "id": "__NODE_16__",
+      "name": "Fetch Owner ID",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst msgType = $('Parse WhatsApp Update').first().json.message_type;\nconst isOwner = String($('Fetch Owner ID').first().json.telegram_id) === \n                String($('Parse WhatsApp Update').first().json.sender_id);\n\nlet allowed = true;\nlet reason = '';\n\nif (isOwner) {\n  // Owners have no limits\n  allowed = true;\n} else {\n  if (msgType === 'text') {\n    allowed = data.text_allowed === true || data.text_allowed === 'true';\n    reason = allowed ? '' : 'text_hourly_limit';\n  } else if (msgType === 'image') {\n    allowed = data.image_allowed === true || data.image_allowed === 'true';\n    reason = allowed ? '' : 'image_daily_limit';\n  } else if (msgType === 'audio') {\n    allowed = data.voice_allowed === true || data.voice_allowed === 'true';\n    reason = allowed ? '' : 'voice_daily_limit';\n  } else if (msgType === 'file') {\n    allowed = data.file_allowed === true || data.file_allowed === 'true';\n    reason = allowed ? '' : 'file_daily_limit';\n  }\n}\n\nreturn { json: { allowed, reason, msgType } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        288
+      ],
+      "id": "__NODE_17__",
+      "name": "Usage Count Check"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_6 (tenant_id, business_id, platform, chat_id, customer_id, last_msg_at)\nVALUES ($1, $2, $5, $3, $4, now())\nON CONFLICT (business_id, platform, chat_id)\nDO UPDATE column_1 now()\nRETURNING id AS conversation_id",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Inject Tenant ID').first().json.tenant_id,\n  $('Inject Tenant ID').first().json.business_id,\n  $('Parse WhatsApp Update').first().json.chat_id,\n  $('Parse WhatsApp Update').first().json.sender_id,\n  'whatsapp'\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2288,
+        32
+      ],
+      "id": "__NODE_18__",
+      "name": "Upsert Conversation",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.item.json;\nconst update = $('Parse WhatsApp Update').first().json;\n\n// \u2500\u2500 Path A: Pre-processed text (from table_7 File Text \u2014 XLSX, CSV, TXT)\n// These arrive with { text, file_type, file_name } already structured\nconst isPreProcessed = response?.text && response?.file_type && !response?.choices;\n\nif (isPreProcessed) {\n  const fileName = response.file_name || update.file_name || 'file';\n  const caption = update.caption || '';\n  const captionNote = caption ? '\\n\\nUser instruction: \"' + caption + '\"' : '';\n\n  const MAX_CHARS = 15000;\n  const raw = response.text || '';\n  const truncated = raw.length > MAX_CHARS;\n  const finalText = truncated\n    ? raw.slice(0, MAX_CHARS) + '\\n\\n[Document truncated \u2014 this is a large file. Only the first portion is shown. If you need specific information not visible here, ask the user to describe it.]'\n    : raw;\n\n  return [{\n    json: {\n      text: finalText + captionNote,\n      message_type: 'file',\n      file_type: response.file_type || 'unknown',\n      is_financial: false,\n      file_summary: raw.slice(0, 500) || ''\n    }\n  }];\n}\n\n// \u2500\u2500 Path B: Groq API response (from table_8 Processing Agent \u2014 PDF, DOCX, images)\nconst rawOutput = response?.choices?.[0]?.message?.content || '';\n\nlet parsed;\ntry {\n  parsed = JSON.parse(rawOutput);\n} catch {\n  const match = rawOutput.match(/\\{[\\s\\S]*\\}/);\n  try {\n    parsed = match ? JSON.parse(match[0]) : null;\n  } catch {\n    parsed = null;\n  }\n}\n\n// If JSON parsing fails entirely, preserve whatever Groq returned as plain text\nif (!parsed) {\n  parsed = {\n    file_type: 'unknown',\n    is_financial: false,\n    full_text: rawOutput || 'Could not read file content.',\n    financial_details: {},\n    key_entities: [],\n    document_title: null\n  };\n}\n\nconst fileName = update.file_name || 'file';\nconst caption = update.caption || '';\nconst captionNote = caption ? '\\n\\nUser instruction: \"' + caption + '\"' : '';\n\nlet contextText = '';\n\nif (parsed.is_financial) {\n  // Financial documents \u2014 all structured details surfaced first, then full text\n  const fd = parsed.financial_details || {};\n  const financialBlock = [\n    fd.transaction_refs?.length ? 'Transaction references: ' + fd.transaction_refs.join(', ') : '',\n    fd.amounts?.length          ? 'Amounts: '               + fd.amounts.join(', ')           : '',\n    fd.account_numbers?.length  ? 'Account numbers: '       + fd.account_numbers.join(', ')   : '',\n    fd.bank_names?.length       ? 'Banks: '                 + fd.bank_names.join(', ')         : '',\n    fd.dates?.length            ? 'Dates: '                 + fd.dates.join(', ')              : '',\n    fd.payer  ? 'Payer: '  + fd.payer  : '',\n    fd.payee  ? 'Payee: '  + fd.payee  : '',\n    fd.status ? 'Status: ' + fd.status : ''\n  ].filter(Boolean).join('\\n');\n\n  contextText =\n    'File: ' + fileName + '\\n' +\n    'Type: ' + (parsed.file_type || 'financial document').toUpperCase() + '\\n' +\n    (parsed.document_title ? 'Title: ' + parsed.document_title + '\\n' : '') +\n    '\\n=== FINANCIAL DETAILS ===\\n' +\n    financialBlock +\n    '\\n\\n=== FULL DOCUMENT CONTENT ===\\n' +\n    (parsed.full_text || '') +\n    (parsed.key_entities?.length ? '\\n\\nKey entities: ' + parsed.key_entities.join(', ') : '');\n\n} else {\n  // Non-financial documents\n  contextText =\n    'File: ' + fileName + '\\n' +\n    'Type: ' + (parsed.file_type || 'document').toUpperCase() + '\\n' +\n    (parsed.document_title ? 'Title: ' + parsed.document_title + '\\n' : '') +\n    '\\n=== DOCUMENT CONTENT ===\\n' +\n    (parsed.full_text || '') +\n    (parsed.key_entities?.length ? '\\n\\nKey entities: ' + parsed.key_entities.join(', ') : '');\n}\n\n// Cap at 15,000 chars (~3,750 tokens) \u2014 leaves room for system prompt + agent response\nconst MAX_CHARS = 15000;\nconst truncated = contextText.length > MAX_CHARS;\nconst finalText = truncated\n  ? contextText.slice(0, MAX_CHARS) + '\\n\\n[Document truncated \u2014 this is a large file. Only the first portion is shown. If you need specific information not visible here, ask the user to describe it.]'\n  : contextText;\n\nreturn [{\n  json: {\n    text: finalText + captionNote,\n    message_type: 'file',\n    file_type: parsed.file_type || 'unknown',\n    is_financial: parsed.is_financial || false,\n    file_summary: (parsed.full_text || '').slice(0, 500)  // short preview for logging only\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        752
+      ],
+      "id": "__NODE_19__",
+      "name": "Format File Output"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Parse WhatsApp Update').first().json.file_mime }}",
+                    "rightValue": "pdf",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pdf"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $('Parse WhatsApp Update').first().json.file_mime }}",
+                    "rightValue": "=application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "docx"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $('Parse WhatsApp Update').first().json.file_mime }}",
+                    "rightValue": "text/plain",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "txt"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $('Parse WhatsApp Update').first().json.file_mime }}",
+                    "rightValue": "=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "xlsx"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $('Parse WhatsApp Update').first().json.file_mime }}",
+                    "rightValue": "text/csv",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "csv"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1520,
+        944
+      ],
+      "id": "__NODE_20__",
+      "name": "Route by File Type"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        1712,
+        1280
+      ],
+      "id": "__NODE_21__",
+      "name": "Extract from table_9"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        1712,
+        1104
+      ],
+      "id": "__NODE_22__",
+      "name": "Extract from table_10"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        1712,
+        928
+      ],
+      "id": "__NODE_23__",
+      "name": "Extract from table_11"
+    },
+    {
+      "parameters": {
+        "jsCode": "const update = $('Parse WhatsApp Update').first().json;\nconst fileName = update.file_name || 'file';\nconst fileMime = update.file_mime || '';\nconst caption = update.caption || '';\n\nlet extractedText = '';\nlet fileType = 'unknown';\n\n// Determine file type from table_12\nif (fileMime.includes('wordprocessing')) fileType = 'docx';\nelse if (fileMime.includes('spreadsheet') || fileMime.includes('excel')) fileType = 'xlsx';\nelse if (fileMime === 'text/csv') fileType = 'csv';\nelse if (fileMime === 'text/plain') fileType = 'txt';\n\n// Try spreadsheet/table data (XLSX, CSV) \u2014 preserve ALL rows, not capped\ntry {\n  const rows = $input.first().json;\n  if (Array.isArray(rows) && rows.length > 0) {\n    const headers = Object.keys(rows[0]).join(' | ');\n    const dataRows = rows.map(row =>\n      Object.values(row).map(v => String(v ?? '')).join(' | ')\n    ).join('\\n');\n    extractedText = 'File: ' + fileName + '\\nType: ' + fileType.toUpperCase() + '\\n\\n' +\n                    'Headers: ' + headers + '\\n\\n' +\n                    'Data (' + rows.length + ' rows):\\n' + dataRows;\n  }\n} catch(e) {}\n\n// Try plain text / DOCX output \u2014 full content\nif (!extractedText) {\n  try {\n    const raw = $input.first().json.text || $input.first().json.data || '';\n    extractedText = 'File: ' + fileName + '\\nType: ' + fileType.toUpperCase() + '\\n\\n' +\n                    'Full content:\\n' + raw;\n  } catch(e) {}\n}\n\nif (!extractedText) {\n  extractedText = 'File: ' + fileName + ' \u2014 could not extract text content.';\n}\n\n// Cap at ~12,000 chars to stay within context limits\n// This is roughly 3,000 tokens \u2014 leaves room for system prompt + agent response\nconst MAX_CHARS = 12000;\nconst truncated = extractedText.length > MAX_CHARS;\nconst finalText = truncated \n  ? extractedText.slice(0, MAX_CHARS) + '\\n\\n[Content truncated \u2014 document is large]'\n  : extractedText;\n\nconst captionNote = caption ? '\\n\\nUser instruction: \"' + caption + '\"' : '';\n\nreturn [{ json: {\n  // This is what goes to Normalise Input as the full user context\n  text: finalText + captionNote,\n  message_type: 'file',\n  file_type: fileType,\n  file_name: fileName,\n  is_financial: false,  // will be overridden if PDF path detects it\n  file_summary: ''       // no summary \u2014 full content passed directly\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        1008
+      ],
+      "id": "__NODE_24__",
+      "name": "Build File Text"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n(function() {\n  const update = $('Parse WhatsApp Update').first().json;\n  const caption = update.caption || '';\n  const fileName = update.file_name || 'file';\n  const fileMime = update.file_mime || 'application/octet-stream';\n  \n  const waResponse = $('Download WhatsApp').first().json;\n  const base64Data = waResponse.base64 || '';\n  const mimeType = waResponse.mimetype || fileMime;\n  \n  const captionInstruction = caption\n    ? 'The user sent this file with the following instruction: \"' + caption + '\"\\n\\n'\n    : '';\n\n  const prompt = captionInstruction +\n    'You have received a file named \"' + fileName + '\".\\n\\n' +\n    'Your task is to extract and preserve the content faithfully for use in a conversation. ' +\n    'CRITICAL RULES:\\n' +\n    '- NEVER invent, infer, or assume any information not explicitly present in the document.\\n' +\n    '- NEVER paraphrase in a way that changes the meaning or loses specific details.\\n' +\n    '- If a number, name, date, account number, amount, or reference appears in the document, reproduce it exactly as written.\\n' +\n    '- If you cannot read part of the document clearly, say so explicitly rather than guessing.\\n\\n' +\n    'Return a JSON object with these fields:\\n' +\n    '{\\n' +\n    '  \"file_type\": \"pdf | docx | txt | image_pdf | receipt | invoice | bank_statement | unknown\",\\n' +\n    '  \"is_financial\": true or false,\\n' +\n    '  \"financial_details\": {\\n' +\n    '    \"transaction_refs\": [],\\n' +\n    '    \"amounts\": [],\\n' +\n    '    \"account_numbers\": [],\\n' +\n    '    \"bank_names\": [],\\n' +\n    '    \"dates\": [],\\n' +\n    '    \"payer\": \"\",\\n' +\n    '    \"payee\": \"\",\\n' +\n    '    \"status\": \"\"\\n' +\n    '  },\\n' +\n    '  \"full_text\": \"THE COMPLETE VERBATIM TEXT of the document if under 2000 words. If over 2000 words, include: (1) all headings and section titles verbatim, (2) all numbers, dates, amounts, names, and reference codes verbatim, (3) a faithful condensed version of each section preserving all critical facts \u2014 no invented details\",\\n' +\n    '  \"page_count\": number or null,\\n' +\n    '  \"document_title\": \"exact title from table_13 or null\",\\n' +\n    '  \"key_entities\": [\"names\", \"organisations\", \"dates\", \"amounts\", \"references \u2014 all verbatim from table_13\"]\\n' +\n    '}\\n\\n' +\n    'For financial documents (receipts, invoices, bank statements, transfer proofs):\\n' +\n    '- Extract EVERY number, reference code, account number, amount, date, and name \u2014 exactly as written\\n' +\n    '- Nigerian banks: Access Bank, Zenith Bank, GTBank, First Bank, UBA, Sterling Bank, Ecobank, Fidelity Bank, FCMB, Stanbic IBTC, Union Bank, Keystone Bank, Polaris Bank, Wema Bank, Kuda Bank, Opay, Palmpay, Moniepoint\\n' +\n    '- Naira amounts (\u20a6), BVN, NIN, NUBAN (10-digit account numbers)\\n\\n' +\n    'Return ONLY the JSON object, no markdown, no preamble.';\n\n  const userContent = [];\n  \n  if (mimeType.startsWith('image/')) {\n    userContent.push({\n      type: 'image_url',\n      image_url: { url: 'data:' + mimeType + ';base64,' + base64Data }\n    });\n  } else {\n    // PDF and everything else \u2014 send as image_url (Groq's only supported base64 format)\n    userContent.push({\n      type: 'image_url',\n      image_url: { url: 'data:' + mimeType + ';base64,' + base64Data }\n    });\n  }\n  \n  userContent.push({ type: 'text', text: prompt });\n  \n  return {\n    model: 'meta-llama/llama-4-scout-17b-16e-instruct',\n    messages: [{ role: 'user', content: userContent }],\n    max_tokens: 4096,\n    temperature: 0.1\n  };\n})()\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1712,
+        752
+      ],
+      "id": "__NODE_25__",
+      "name": "File Processing Agent",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $('Fetch Owner ID').first().json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (function() {\n  const orderNum  = $('Handle Output').first().json.order_number;\n  const summary   = $('Handle Output').first().json.order_summary || '';\n  const chatId    = String($('Fetch Owner ID').first().json.telegram_id);\n  const botToken  = $('Fetch Owner ID').first().json.bot_token;\n\n  // Derive business mode from table_14 content\n  // The customer agent sets delivery_type=appointment for bookings\n  // order_summary is passed from table_15 subworkflow output\n  const isBooking = summary.toLowerCase().includes('appointment') ||\n                    summary.toLowerCase().includes('booking');\n\n  const emoji  = isBooking ? '\ud83d\udcc5' : '\ud83d\uded2';\n  const title  = isBooking ? 'New Booking!' : 'New Order!';\n  const action = isBooking ? 'Confirm Appointment' : 'Confirm & Pay';\n  const hint   = isBooking\n    ? '<i>Confirm to notify the customer. Hold = pending availability. Reject = cannot fulfil.</i>'\n    : '<i>Confirm to send payment details to customer. Hold = low stock. Reject = cannot fulfil.</i>';\n\n  return {\n    chat_id: chatId,\n    text: emoji + ' <b>' + title + '</b>\\n\\n<b>Order:</b> ' + orderNum + '\\n' + summary + '\\n\\n' + hint,\n    parse_mode: 'HTML',\n    reply_markup: JSON.stringify({\n      inline_keyboard: [[\n        { text: '\u2705 ' + action, callback_data: 'confirm|' + orderNum },\n        { text: '\u23f8 Hold',       callback_data: 'hold|'    + orderNum },\n        { text: '\u274c Reject',     callback_data: 'reject|'  + orderNum }\n      ]]\n    })\n  };\n})() }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3088,
+        272
+      ],
+      "id": "__NODE_26__",
+      "name": "Notify Owner: New Order",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $('Normalise Input').first().json.is_financial }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $('Handle Output').first().json.is_owner }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2880,
+        448
+      ],
+      "id": "__NODE_27__",
+      "name": "Has Payment Proof?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $('Handle Output').first().json.has_new_order }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2880,
+        272
+      ],
+      "id": "__NODE_28__",
+      "name": "Has New Order?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $('Fetch Owner ID').first().json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $('Fetch Owner ID').first().json.telegram_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{\n'\ud83d\udcb3 *Payment proof received!*\\n\\n' +\n$('Parse WhatsApp Update').first().json.first_name +\n' just sent a receipt of *' + $('Format Vision Output').item.json.extractedamount + '*.\\n' +\n'Check your transaction history and send I have received the payment'\n}}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3088,
+        448
+      ],
+      "id": "__NODE_29__",
+      "name": "Notify Owner: Payment Proof",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=[URL] $('Parse WhatsApp Update').first().json.wa_instance }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $('Parse WhatsApp Update').first().json.chat_id.replace('@s.whatsapp.net', '') }}\",\n  \"text\": \"We currently support text, images, voice notes, and documents only.\\n\\nCould you describe what you wanted to show in the video in a few words? We'll be happy to help! \ud83d\udcac\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1520,
+        624
+      ],
+      "id": "__NODE_30__",
+      "name": "Block Video Input",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_16 (\n    tenant_id, business_id, telegram_id, platform, platform_id,\n    hourly_text_count, last_text_hour,\n    daily_image_count, daily_voice_count,\n    message_count, last_activity_date, last_seen_at,\n    first_seen_at, display_name, username\n)\nVALUES (\n    $1, $2, $3, $7, $8,\n    CASE WHEN $6 = 'text' THEN 1 ELSE 0 END,\n    CASE WHEN $6 = 'text' THEN NOW() ELSE NULL END,\n    CASE WHEN $6 = 'image' THEN 1 ELSE 0 END,\n    CASE WHEN $6 = 'audio' THEN 1 ELSE 0 END,\n    1, CURRENT_DATE, NOW(),\n    NOW(),\n    COALESCE($4, 'Customer'),\n    COALESCE($5, '')\n)\nON CONFLICT (business_id, platform, platform_id)\nDO UPDATE column_2 CASE \n        WHEN $6 = 'text' THEN\n            CASE \n                WHEN msq_customers.last_text_hour IS NULL \n                  OR msq_customers.last_text_hour < date_trunc('hour', NOW()) \n                THEN 1\n                ELSE msq_customers.hourly_text_count + 1\n            END\n        ELSE msq_customers.hourly_text_count\n    END,\n    last_text_hour = CASE WHEN $6 = 'text' THEN NOW() ELSE msq_customers.last_text_hour END,\n    daily_image_count = CASE \n        WHEN $6 = 'image' THEN\n            CASE \n                WHEN msq_customers.last_activity_date IS NULL \n                  OR msq_customers.last_activity_date < CURRENT_DATE \n                THEN 1\n                ELSE msq_customers.daily_image_count + 1\n            END\n        ELSE msq_customers.daily_image_count\n    END,\n    daily_voice_count = CASE \n        WHEN $6 = 'audio' THEN\n            CASE \n                WHEN msq_customers.last_activity_date IS NULL \n                  OR msq_customers.last_activity_date < CURRENT_DATE \n                THEN 1\n                ELSE msq_customers.daily_voice_count + 1\n            END\n        ELSE msq_customers.daily_voice_count\n    END,\n    message_count = msq_customers.message_count + 1,\n    last_activity_date = CURRENT_DATE,\n    last_seen_at = NOW(),\n    display_name = COALESCE(EXCLUDED.display_name, msq_customers.display_name),\n    username = COALESCE(EXCLUDED.username, msq_customers.username)\nRETURNING\n    (CASE \n        WHEN $6 = 'text' THEN\n            (CASE \n                WHEN msq_customers.last_text_hour IS NULL \n                  OR msq_customers.last_text_hour < date_trunc('hour', NOW()) \n                THEN 1\n                ELSE COALESCE(msq_customers.hourly_text_count, 0) + 1\n            END) <= 30\n        ELSE TRUE\n    END) AS text_allowed,\n    (CASE \n        WHEN $6 = 'image' THEN\n            (CASE \n                WHEN msq_customers.last_activity_date IS NULL \n                  OR msq_customers.last_activity_date < CURRENT_DATE \n                THEN 1\n                ELSE COALESCE(msq_customers.daily_image_count, 0) + 1\n            END) <= 5\n        ELSE TRUE\n    END) AS image_allowed,\n    (CASE \n        WHEN $6 = 'audio' THEN\n            (CASE \n                WHEN msq_customers.last_activity_date IS NULL \n                  OR msq_customers.last_activity_date < CURRENT_DATE \n                THEN 1\n                ELSE COALESCE(msq_customers.daily_voice_count, 0) + 1\n            END) <= 10\n        ELSE TRUE\n    END) AS voice_allowed,\n    (CASE \n        WHEN $6 = 'file' THEN\n            (CASE \n                WHEN msq_customers.last_activity_date IS NULL \n                  OR msq_customers.last_activity_date < CURRENT_DATE \n                THEN 1\n                ELSE COALESCE(msq_customers.daily_image_count, 0) + 1\n            END) <= 3\n        ELSE TRUE\n    END) AS file_allowed",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Inject Tenant ID').first().json.tenant_id,\n  $('Inject Tenant ID').first().json.business_id,\n  null,\n  $('Parse WhatsApp Update').first().json.first_name || null,\n  $('Parse WhatsApp Update').first().json.username || null,\n  $('Parse WhatsApp Update').first().json.message_type,\n  'whatsapp',\n  $('Parse WhatsApp Update').first().json.sender_id\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        400,
+        288
+      ],
+      "id": "__NODE_31__",
+      "name": "Check Customer Limit",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const waResponse = $('Download WhatsApp').first().json;\nconst base64 = waResponse.base64 || '';\nconst mimetype = waResponse.mimetype || 'image/jpeg';\nconst imageUrl = `data:${mimetype};base64,${base64}`;\nconst caption = $('Parse WhatsApp Update').first().json.caption || '';\nconst captionNote = caption ? `The sender wrote: \"${caption}\". ` : '';\n\nconst promptText = `Analyze this image carefully. ${captionNote}\nReturn ONLY a valid JSON object with exactly these fields:\n\n{\n  \"is_financial\": boolean,\n  \"financial_type\": \"account_details\" | \"receipt\" | \"transfer_screenshot\" | \"balance_screenshot\" | \"none\",\n  \"accounts\": [{\"account_number\": \"string\", \"bank_name\": \"string\", \"account_holder_name\": \"string or null\"}],\n  \"amount_transferred\": \"naira string or null\",\n  \"image_description\": \"one clear sentence describing what is in the image\",\n  \"suggested_name\": \"if this is a product/item, what a seller would call it. null if not a product.\",\n  \"suggested_category\": \"single lowercase word for product category. null if not a product.\",\n  \"image_type_hint\": \"logo\" | \"product\" | \"portfolio\" | \"other\",\n  \"is_product_reference\": boolean,\n  \"product_specs\": {\"colour\": \"string or null\", \"style\": \"string or null\", \"material\": \"string or null\", \"occasion\": \"string or null\"}\n}\n\nRULES:\nis_financial = true ONLY for bank account numbers, receipts, transfer screenshots, balance screenshots.\nNigerian banks: Access Bank, Zenith Bank, GTBank, First Bank, UBA, Sterling Bank, Ecobank, Fidelity Bank, FCMB, Stanbic IBTC, Union Bank, Keystone Bank, Polaris Bank, Wema Bank, Kuda Bank, Opay, Palmpay, Moniepoint.\nis_product_reference = true if this looks like a product photo a customer might want to order.\nproduct_specs: extract only what is clearly visible. Set fields to null if not visible.\nReturn ONLY the JSON. No markdown, no explanation.`;\n\nreturn {\n  json: {\n    model: 'meta-llama/llama-4-scout-17b-16e-instruct',\n    messages: [{\n      role: 'user',\n      content: [\n        { type: 'text', text: promptText },\n        { type: 'image_url', image_url: { url: imageUrl } }\n      ]\n    }],\n    temperature: 0.1,\n    max_tokens: 1024,\n    _image_url: imageUrl,\n    _is_owner: false\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        448
+      ],
+      "id": "__NODE_32__",
+      "name": "Prepare Vision Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: $json.model, messages: $json.messages, temperature: $json.temperature, max_tokens: $json.max_tokens } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1712,
+        448
+      ],
+      "id": "__NODE_33__",
+      "name": "Vision Agent",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_17 (platform_user_id, last_image_url, updated_at)\nVALUES ($1, $2, now())\nON CONFLICT (platform_user_id)\nDO UPDATE column_3 $2,\n  updated_at     = now()",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Parse WhatsApp Update').first().json.chat_id,\n  $('Download WhatsApp').first().json.base64\n    ? 'data:' + $('Download WhatsApp').first().json.mimetype + ';base64,' + $('Download WhatsApp').first().json.base64\n    : ''\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1904,
+        272
+      ],
+      "id": "__NODE_34__",
+      "name": "Save Image Context",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $('Save Messages').first().json.agent_reply }}",
+              "rightValue": "https://",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $('Save Messages').first().json.agent_reply }}",
+              "rightValue": "http://",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3504,
+        32
+      ],
+      "id": "__NODE_35__",
+      "name": "Has URL?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=[URL] $('Save Messages').first().json.wa_instance }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $('Save Messages').first().json.chat_id.replace('@s.whatsapp.net', '') }}\",\n  \"text\": \"{{ $('Sanitize Reply').first().json.clean_reply }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3920,
+        -48
+      ],
+      "id": "__NODE_36__",
+      "name": "Send Reply (plain)",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst data = body.data || {};\nconst key  = data.key  || {};\n\n// \u2500\u2500 Event filter: only process incoming messages\nif (body.event !== 'messages.upsert') return [];\n\n// \u2500\u2500 Ignore bot's own messages\nif (key.fromMe) return [];\n\n// \u2500\u2500 Ignore status broadcasts\nif (key.remoteJid === 'status@broadcast') return [];\n\n// \u2500\u2500 Ignore group messages\nif (key.remoteJid?.endsWith('@g.us')) return [];\n\n// \u2500\u2500 Ignore newsletter channels\nif (key.remoteJid?.endsWith('@newsletter')) return [];\n\n// \u2500\u2500 Ignore sticker-only messages\nconst msg = data.message || {};\nif (msg.stickerMessage && !msg.conversation && !msg.extendedTextMessage) return [];\n\n// \u2500\u2500 Resolve instance \u2192 business_id (Resolve Tenant node fills tenant_id)\nconst instanceName = body.instance || '';\nconst business_id  = $json.query?.businessId || instanceName.replace(/^msq_/, '');\nconst tenant_id    = $json.query?.tenantId   || '';\n\nif (!business_id) throw new Error('Cannot determine business_id \u2014 check instance name format: msq_{business_id}');\n\nconst chat_id    = key.remoteJid;\nconst sender_id  = key.remoteJid;\nconst first_name = data.pushName || '';\nconst username   = '';\n\nconst text =\n  msg.conversation                      ||\n  msg.extendedTextMessage?.text         ||\n  msg.imageMessage?.caption             ||\n  msg.videoMessage?.caption             ||\n  msg.documentMessage?.caption          ||\n  '';\n\nconst caption = msg.imageMessage?.caption || msg.videoMessage?.caption || '';\n\nconst message_type =\n  msg.audioMessage    ? 'audio'   :\n  msg.imageMessage    ? 'image'   :\n  msg.videoMessage    ? 'video'   :\n  msg.documentMessage ? 'file'    :\n  msg.stickerMessage  ? 'sticker' :\n  (msg.conversation || msg.extendedTextMessage) ? 'text' : 'unknown';\n\nconst voice_file_id = msg.audioMessage    ? key.id : null;\nconst photo_file_id = msg.imageMessage    ? key.id : null;\nconst file_id       = msg.documentMessage ? key.id : null;\nconst video_file_id = msg.videoMessage    ? key.id : null;\n\nconst wa_instance = instanceName || `msq_${business_id}`;\n\nreturn { json: {\n  // Identity \u2014 filled in by Resolve Tenant / Inject Tenant ID\n  tenant_id,\n  business_id,\n  wa_instance,\n\n  // Sender\n  chat_id,\n  sender_id,\n  first_name,\n  username,\n\n  // Message content\n  text,\n  caption,\n  message_id: key.id,\n  message_type,\n  platform: 'whatsapp',\n  raw_message: msg,  // full data.message object \u2014 needed for media download\n\n  // Media file references (used by Download WhatsApp)\n  voice_file_id,\n  photo_file_id,\n  file_id,\n  video_file_id,\n\n  // File metadata (used by Route by File Type, Build File Text)\n  file_name: msg.documentMessage?.fileName   || null,\n  file_mime: msg.documentMessage?.mimetype   || null,\n  file_size: msg.documentMessage?.fileLength || null,\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -752,
+        80
+      ],
+      "id": "__NODE_37__",
+      "name": "Parse WhatsApp Update"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT tenant_id, business_id, phone_number_id\nFROM table_5\ncolumn_4 $1\n  column_5 'whatsapp'\n  column_6 true\nLIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [$('Parse WhatsApp Update').first().json.wa_instance] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -560,
+        80
+      ],
+      "id": "__NODE_38__",
+      "name": "Resolve Tenant",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "tenant_id",
+              "value": "={{ $('Resolve Tenant').first().json.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "__ASSIGN_1__",
+              "name": "business_id",
+              "value": "REDACTED",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "is_start",
+              "value": "={{ $('Parse WhatsApp Update').first().json.is_start }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "wa_instance",
+              "value": "={{ $('Parse WhatsApp Update').first().json.wa_instance }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "chat_id",
+              "value": "={{ $('Parse WhatsApp Update').first().json.chat_id }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "sender_id",
+              "value": "={{ $('Parse WhatsApp Update').first().json.sender_id }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "first_name",
+              "value": "={{ $('Parse WhatsApp Update').first().json.first_name }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "message_type",
+              "value": "={{ $('Parse WhatsApp Update').first().json.message_type }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -368,
+        80
+      ],
+      "id": "__NODE_39__",
+      "name": "Inject Tenant ID"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT NOT EXISTS (\n  SELECT 1 FROM table_16\n  column_7 $1\n    column_5 'whatsapp'\n    column_8 $2\n) AS is_first_contact",
+        "options": {
+          "queryReplacement": "={{ [  $('Inject Tenant ID').first().json.business_id,  $('Parse WhatsApp Update').first().json.chat_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -176,
+        80
+      ],
+      "id": "__NODE_40__",
+      "name": "Check First Contact",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $json.is_first_contact }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        16,
+        80
+      ],
+      "id": "__NODE_41__",
+      "name": "Is First Contact?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_16 (\n  tenant_id, business_id, platform, platform_id, display_name, message_count\n)\nVALUES ($1, $2, 'whatsapp', $3, $4, 1)\nON CONFLICT (business_id, platform, platform_id) DO UPDATE column_9 msq_customers.message_count + 1,\n  display_name  = EXCLUDED.display_name",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Inject Tenant ID').first().json.tenant_id,\n  $('Inject Tenant ID').first().json.business_id,\n  $('Parse WhatsApp Update').first().json.chat_id,\n  $('Parse WhatsApp Update').first().json.first_name\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        784,
+        -128
+      ],
+      "id": "__NODE_42__",
+      "name": "Mark Customer Seen",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx       = $('Fetch Start Context').first().json;\nconst bizName   = ctx.business_name  || 'us';\nconst agentName = ctx.agent_name     || 'your assistant';\nconst mode      = (ctx.business_mode || 'product_only').trim();\nconst rawDesc   = (ctx.business_description || '').trim();\n\nconst isService = mode === 'service_only';\nconst isHybrid  = mode === 'hybrid_product_led' || mode === 'hybrid_service_led';\n\nlet descLine = '';\nif (rawDesc) {\n  let sentence = rawDesc.split(/[.!?\\n]/)[0].trim();\n  if (sentence.length > 130) sentence = sentence.substring(0, 127) + '...';\n  sentence = sentence.replace(/^I\\b/i, 'We');\n  descLine = sentence + '.';\n}\n\nconst invite = isService\n  ? 'Got questions or want to book? Just say the word \ud83d\udc47'\n  : isHybrid\n  ? 'Want to see what we offer, place an order, or just ask a question? Go ahead \ud83d\udc47'\n  : 'Want to see what we have, ask about pricing, or place an order? Just tell us \ud83d\udc47';\n\nlet msg = '\ud83d\udc4b *Welcome to ' + bizName + '!*\\n\\n';\nif (descLine) msg += descLine + '\\n\\n';\nmsg += agentName + ' is here to help you \u2014 day or night. \ud83c\udf1f\\n\\n';\nmsg += invite;\n\nreturn [{ json: { welcome_text: msg } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -128
+      ],
+      "id": "__NODE_43__",
+      "name": "Build Welcome Message"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Migration for Catalogue Manager feature\n-- Run this before importing the workflows\n\n-- Session table for catalogue manager links\nCREATE TABLE IF NOT EXISTS msq_catalogue_sessions (\n    token        text        PRIMARY KEY,\n    tenant_id    uuid        NOT NULL REFERENCES msq_tenants(id) ON DELETE CASCADE,\n    business_id  uuid        NOT NULL,\n    expires_at   timestamptz NOT NULL DEFAULT (now() + interval '7 days'),\n    created_at   timestamptz NOT NULL DEFAULT now()\n);\nCREATE INDEX IF NOT EXISTS idx_msq_cat_sessions_tenant ON msq_catalogue_sessions(tenant_id);\n\n-- Ensure msq_product_images has all columns needed\nALTER TABLE msq_product_images\n    ADD COLUMN IF NOT EXISTS display_name   text,\n    ADD COLUMN IF NOT EXISTS price          numeric,\n    ADD COLUMN IF NOT EXISTS price_label    text,\n    ADD COLUMN IF NOT EXISTS show_on_store  boolean DEFAULT true,\n    ADD COLUMN IF NOT EXISTS image_type     text    DEFAULT 'product',\n    ADD COLUMN IF NOT EXISTS sort_order     int     DEFAULT 0;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1632,
+        -416
+      ],
+      "id": "__NODE_44__",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=[URL] $('Parse WhatsApp Update').first().json.wa_instance }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  message: {\n    key: {\n      id: $('Parse WhatsApp Update').first().json.voice_file_id\n       || $('Parse WhatsApp Update').first().json.photo_file_id\n       || $('Parse WhatsApp Update').first().json.file_id,\n      remoteJid: $('Parse WhatsApp Update').first().json.chat_id,\n      fromMe: false\n    },\n    message: $('Parse WhatsApp Update').first().json.raw_message\n  },\n  convertToMp4: false\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1152,
+        288
+      ],
+      "id": "__NODE_45__",
+      "name": "Download WhatsApp",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ev-messages-upsert",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "messages.upsert",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ev-connection-update",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "connection.update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "qrcode.updated",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -944,
+        272
+      ],
+      "id": "__NODE_46__",
+      "name": "Route by Event"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst data = body.data || {};\nconst instanceName = body.instance || \"\";\nconst state = data.state || \"\";\nconst pairingCode = data.pairingCode || null;\nreturn [{ json: { instanceName, state, pairingCode } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -752,
+        288
+      ],
+      "id": "__NODE_47__",
+      "name": "Handle Connection Update"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-wa-open",
+              "leftValue": "={{ $json.state }}",
+              "rightValue": "open",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -368,
+        496
+      ],
+      "id": "__NODE_48__",
+      "name": "Is WA Open?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE table_5\ncolumn_6 true, connected_at = now()\ncolumn_4 $1 column_5 'whatsapp'\nRETURNING tenant_id, business_id, phone_number_id",
+        "options": {
+          "queryReplacement": "={{ [$json.instanceName] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -176,
+        496
+      ],
+      "id": "__NODE_49__",
+      "name": "Activate WA Integration",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT t.telegram_id, bp.business_name\nFROM table_3 bp\nJOIN table_2 t ON t.id = bp.tenant_id\nWHERE bp.id = $1::uuid\nLIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [$('Activate WA Integration').first().json.business_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        16,
+        496
+      ],
+      "id": "__NODE_50__",
+      "name": "Fetch Owner for WA Notify",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $json.pairingCode }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -560,
+        400
+      ],
+      "id": "__NODE_51__",
+      "name": "Has Pairing Code?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT t.telegram_id\nFROM table_5 pi_wa\nJOIN table_3 bp ON bp.id = pi_wa.business_id\nJOIN table_2 t ON t.id = bp.tenant_id\nWHERE pi_wa.access_token = $1 AND pi_wa.platform = 'whatsapp'\nLIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [$json.instanceName] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -368,
+        288
+      ],
+      "id": "__NODE_52__",
+      "name": "Fetch Owner for Pairing",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst data = body.data || {};\nconst qrcode = data.qrcode || {};\nconst instanceName = body.instance || \"\";\nconst pairingCode = qrcode.pairingCode || null;\nreturn [{ json: { instanceName, pairingCode } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -752,
+        496
+      ],
+      "id": "__NODE_53__",
+      "name": "Handle QR Update"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.telegram_id }}",
+        "text": "=\ud83d\udd10 *Pairing Code: {{ $('Has Pairing Code?').first().json.pairingCode }}*\n\nIn WhatsApp: \n\u2192 *Settings \u2192 Linked Devices \u2192 Link a Device* \n\u2192 Tap *'Link with Phone Number instead'*  \n\nEnter the code within 60 seconds. I'll confirm once connected. \u2705",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -176,
+        288
+      ],
+      "id": "__NODE_54__",
+      "name": "Send Pairing Code",
+      "webhookId": "__WEBHOOK_2__",
+      "credentials": {
+        "telegramApi": {
+          "id": "__TELEGRAM_CRED_ID",
+          "name": "Telegram Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.telegram_id }}",
+        "text": "=\u2705 *WhatsApp Connected!*\n\nYour business *{{ $json.business_name }}* is now live on WhatsApp.\n\nCustomers can now reach you. \ud83c\udf89",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        496
+      ],
+      "id": "__NODE_55__",
+      "name": "Notify Owner WA Connected",
+      "webhookId": "__WEBHOOK_3__",
+      "credentials": {
+        "telegramApi": {
+          "id": "__TELEGRAM_CRED_ID",
+          "name": "Telegram Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $('Parse WhatsApp Update').first().json.message_type }}",
+              "rightValue": "text",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        976,
+        32
+      ],
+      "id": "__NODE_56__",
+      "name": "Is Text?"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Parse WhatsApp Update').first().json.message_type }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $('Parse WhatsApp Update').first().json.message_type }}",
+                    "rightValue": "image",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "image"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $('Parse WhatsApp Update').first().json.message_type }}",
+                    "rightValue": "video",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "video"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $('Parse WhatsApp Update').first().json.message_type }}",
+                    "rightValue": "file",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "file"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        1344,
+        256
+      ],
+      "id": "__NODE_57__",
+      "name": "Input Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "const reply = $('Save Messages').first().json.agent_reply || '';\nconst clean = reply\n  .replace(/\\*([^*]+)\\*/g, '$1')\n  .replace(/_([^_]+)_/g, '$1')\n  .replace(/\\n/g, ' ')\n  .trim();\nreturn [{ json: { clean_reply: clean } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3712,
+        -48
+      ],
+      "id": "__NODE_58__",
+      "name": "Sanitize Reply"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "wTj8NMMNUYA8aZBx",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/wTj8NMMNUYA8aZBx",
+          "cachedResultName": "MySquad Customer Agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $('Normalise Input').first().json.tenant_id }}",
+            "chat_id": "={{ $('Normalise Input').first().json.chat_id }}",
+            "sender_id": "REDACTED",
+            "conversation_id": "={{ $('Upsert Conversation').first().json.conversation_id }}",
+            "text": "={{ $('Normalise Input').first().json.text }}",
+            "message_type": "={{ $('Normalise Input').first().json.message_type }}",
+            "display_name": "={{ $('Parse WhatsApp Update').first().json.first_name || 'there' }}",
+            "username": "={{ $('Parse WhatsApp Update').first().json.username || '' }}",
+            "image_id": "={{ $('Normalise Input').first().json.photo_file_id }}",
+            "caption": "={{ $('Normalise Input').first().json.caption }}",
+            "source": "whatsapp",
+            "business_id": "REDACTED",
+            "bot_token": "REDACTED"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "business_id",
+              "displayName": "business_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "sender_id",
+              "displayName": "sender_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "bot_token",
+              "displayName": "bot_token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "text",
+              "displayName": "text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "message_type",
+              "displayName": "message_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "display_name",
+              "displayName": "display_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "username",
+              "displayName": "username",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "image_id",
+              "displayName": "image_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "caption",
+              "displayName": "caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2480,
+        32
+      ],
+      "id": "__NODE_59__",
+      "name": "Call Customer Agent Workflow",
+      "retryOnFail": true
+    }
+  ],
+  "connections": {
+    "Agent Webhook": {
+      "main": [
+        [
+          {
+            "node": "Route by Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Messages": {
+      "main": [
+        [
+          {
+            "node": "Write Messages to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Messages to DB": {
+      "main": [
+        [
+          {
+            "node": "Has URL?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcription model": {
+      "main": [
+        [
+          {
+            "node": "Format Audio to Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rename Audio File": {
+      "main": [
+        [
+          {
+            "node": "Transcription model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Audio to Text": {
+      "main": [
+        [
+          {
+            "node": "Normalise Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Vision Output": {
+      "main": [
+        [
+          {
+            "node": "Normalise Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalise Input": {
+      "main": [
+        [
+          {
+            "node": "Upsert Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Output": {
+      "main": [
+        [
+          {
+            "node": "Output type",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has Payment Proof?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has New Order?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Start Context": {
+      "main": [
+        [
+          {
+            "node": "Build Welcome Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output type": {
+      "main": [
+        [
+          {
+            "node": "Save Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Usage Count": {
+      "main": [
+        [
+          {
+            "node": "Is Text?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Customer Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Owner ID": {
+      "main": [
+        [
+          {
+            "node": "Check Customer Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Usage Count Check": {
+      "main": [
+        [
+          {
+            "node": "Usage Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Conversation": {
+      "main": [
+        [
+          {
+            "node": "Call Customer Agent Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format File Output": {
+      "main": [
+        [
+          {
+            "node": "Normalise Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by File Type": {
+      "main": [
+        [
+          {
+            "node": "File Processing Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "File Processing Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract from Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract from Excel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract from CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from Text": {
+      "main": [
+        [
+          {
+            "node": "Build File Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from Excel": {
+      "main": [
+        [
+          {
+            "node": "Build File Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from CSV": {
+      "main": [
+        [
+          {
+            "node": "Build File Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Processing Agent": {
+      "main": [
+        [
+          {
+            "node": "Normalise Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build File Text": {
+      "main": [
+        [
+          {
+            "node": "Format File Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New Order?": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner: New Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Payment Proof?": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner: Payment Proof",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Customer Limit": {
+      "main": [
+        [
+          {
+            "node": "Usage Count Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Vision Request": {
+      "main": [
+        [
+          {
+            "node": "Vision Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vision Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Vision Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has URL?": {
+      "main": [
+        [
+          {
+            "node": "Sanitize Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Agent Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse WhatsApp Update": {
+      "main": [
+        [
+          {
+            "node": "Resolve Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Tenant": {
+      "main": [
+        [
+          {
+            "node": "Inject Tenant ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inject Tenant ID": {
+      "main": [
+        [
+          {
+            "node": "Check First Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check First Contact": {
+      "main": [
+        [
+          {
+            "node": "Is First Contact?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is First Contact?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Start Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Owner ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Customer Welcome": {
+      "main": [
+        [
+          {
+            "node": "Mark Customer Seen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Welcome Message": {
+      "main": [
+        [
+          {
+            "node": "Send Customer Welcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Input Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Event": {
+      "main": [
+        [
+          {
+            "node": "Parse WhatsApp Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Connection Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle QR Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Connection Update": {
+      "main": [
+        [
+          {
+            "node": "Has Pairing Code?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is WA Open?": {
+      "main": [
+        [
+          {
+            "node": "Activate WA Integration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Activate WA Integration": {
+      "main": [
+        [
+          {
+            "node": "Fetch Owner for WA Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Owner for WA Notify": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner WA Connected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Pairing Code?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Owner for Pairing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is WA Open?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Owner for Pairing": {
+      "main": [
+        [
+          {
+            "node": "Send Pairing Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle QR Update": {
+      "main": [
+        [
+          {
+            "node": "Has Pairing Code?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Text?": {
+      "main": [
+        [
+          {
+            "node": "Normalise Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Image Context": {
+      "main": [
+        [
+          {
+            "node": "Call Customer Agent Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input Switch": {
+      "main": [
+        [
+          {
+            "node": "Rename Audio File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Vision Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Image Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Block Video Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route by File Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize Reply": {
+      "main": [
+        [
+          {
+            "node": "Send Reply (plain)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Customer Agent Workflow": {
+      "main": [
+        [
+          {
+            "node": "Handle Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "Agent Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "orangegroupsai.online",
+            "user-agent": "axios/1.13.2",
+            "content-length": "713",
+            "accept": "application/json, text/plain, */*",
+            "accept-encoding": "gzip, compress, deflate, br",
+            "content-type": "application/json",
+            "x-forwarded-for": "172.19.0.1",
+            "x-forwarded-host": "orangegroupsai.online",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "e10704efd721",
+            "x-real-ip": "172.19.0.1"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "event": "connection.update",
+            "instance": "REDACTED_OPAQUE_TOKEN",
+            "data": {
+              "instance": "REDACTED_OPAQUE_TOKEN",
+              "wuid": "[EMAIL]",
+              "profileName": "Adekunle Adebiyi",
+              "profilePictureUrl": "[URL]",
+              "state": "open",
+              "statusReason": 200
+            },
+            "destination": "[URL]",
+            "date_time": "2026-05-20T17:56:42.773Z",
+            "sender": "[EMAIL]",
+            "server_url": "[URL]",
+            "apikey": "REDACTED"
+          },
+          "webhookUrl": "REDACTED",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": null,
+  "versionCounter": 750,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-05-18T09:38:09.315Z",
+      "createdAt": "2026-05-18T09:38:09.315Z",
+      "role": "workflow:owner",
+      "workflowId": "bVQn5RNneknhYvoJ",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version f804f8c0",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.770534+00:00",
+    "original_name": "MySquad Agent Handler (Whatsapp)",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_messages": "table_1",
+      "msq_tenants": "table_2",
+      "msq_business_profiles": "table_3",
+      "msq_agent_config": "table_4",
+      "msq_platform_integrations": "table_5",
+      "msq_conversations": "table_6",
+      "Build": "table_7",
+      "File": "table_8",
+      "CSV": "table_9",
+      "Excel": "table_10",
+      "Text": "table_11",
+      "mime": "table_12",
+      "document": "table_13",
+      "order_summary": "table_14",
+      "the": "table_15",
+      "msq_customers": "table_16",
+      "msq_media_context": "table_17"
+    },
+    "columns_renamed": {
+      "last_msg_at": "column_1",
+      "hourly_text_count": "column_2",
+      "last_image_url": "column_3",
+      "access_token": "column_4",
+      "platform": "column_5",
+      "is_active": "column_6",
+      "business_id": "column_7",
+      "platform_id": "column_8",
+      "message_count": "column_9"
+    }
+  }
+}

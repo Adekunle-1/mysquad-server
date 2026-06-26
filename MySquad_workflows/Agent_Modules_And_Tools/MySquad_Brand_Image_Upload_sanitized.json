@@ -1,0 +1,323 @@
+{
+  "updatedAt": "2026-06-08T13:59:17.744Z",
+  "createdAt": "2026-04-29T23:22:04.830Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Brand Image Upload",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"tenant_id\": \"[ID]\",\n  \"product_name\": \"Charcoal Black Agbada\",\n  \"image_url\": \"[URL]\",\n  \"mime_type\": \"image/jpeg\",\n  \"price\": 45000,\n  \"business_id\": \"uuid\"\n}"
+      },
+      "id": "__NODE_1__",
+      "name": "Incoming Payload",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        368,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nconst tenantId    = String(input.tenant_id   || '').trim();\nconst businessId  = String(input.business_id || '').trim();\nconst productName = String(input.product_name || '').trim();\nconst imageUrl    = String(input.image_url    || '').trim();\nconst mimeType    = String(input.mime_type    || 'image/jpeg').trim();\n\n// Parse price \u2014 accept number, string like '45000', '\u20a645,000', '45k'\nlet price = null;\nlet priceLabel = null;\nconst rawPrice = input.price;\nif (rawPrice !== null && rawPrice !== undefined && rawPrice !== '') {\n  const cleaned = String(rawPrice).replace(/[\u20a6,\\s]/g, '').replace(/k$/i, '000');\n  const parsed = parseFloat(cleaned);\n  if (!isNaN(parsed) && parsed > 0) {\n    price = parsed;\n    // Build a clean label\n    priceLabel = '\u20a6' + parsed.toLocaleString('en-NG');\n  }\n}\n\nif (!tenantId)    throw new Error('Missing tenant_id');\nif (!productName) throw new Error('Missing product_name');\nif (!imageUrl)    throw new Error('Missing image_url');\n\nconst slug = productName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');\nconst ext  = mimeType.split('/')[1] || 'jpg';\n// Use business_id in path if available, else tenant_id only\nconst pathPrefix = businessId ? tenantId + '/' + businessId : tenantId;\nconst objectKey = pathPrefix + '/products/' + slug + '.' + ext;\n\nreturn [{\n  json: {\n    tenant_id:    tenantId,\n    business_id:  businessId || null,\n    product_name: productName,\n    image_url:    imageUrl,\n    mime_type:    mimeType,\n    price:        price,\n    price_label:  priceLabel,\n    object_key:   objectKey\n  }\n}];"
+      },
+      "id": "__NODE_2__",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.image_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "__NODE_3__",
+      "name": "Download Image from table_1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        816,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "preserve-tenant",
+              "name": "tenant_id",
+              "value": "={{ $('Normalize Input').first().json.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "preserve-biz",
+              "name": "business_id",
+              "value": "REDACTED",
+              "type": "string"
+            },
+            {
+              "id": "preserve-product",
+              "name": "product_name",
+              "value": "={{ $('Normalize Input').first().json.product_name }}",
+              "type": "string"
+            },
+            {
+              "id": "preserve-key",
+              "name": "object_key",
+              "value": "={{ $('Normalize Input').first().json.object_key }}",
+              "type": "string"
+            },
+            {
+              "id": "preserve-mime",
+              "name": "mime_type",
+              "value": "={{ $('Normalize Input').first().json.mime_type }}",
+              "type": "string"
+            },
+            {
+              "id": "preserve-price",
+              "name": "price",
+              "value": "={{ $('Normalize Input').first().json.price }}",
+              "type": "number"
+            },
+            {
+              "id": "preserve-plabel",
+              "name": "price_label",
+              "value": "={{ $('Normalize Input').first().json.price_label }}",
+              "type": "string"
+            },
+            {
+              "id": "preserve-binary",
+              "name": "data",
+              "value": "data",
+              "type": "binary"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "__NODE_4__",
+      "name": "Preserve Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1040,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "mysquad-assets",
+        "fileName": "={{ $json.object_key }}",
+        "additionalFields": {}
+      },
+      "id": "__NODE_5__",
+      "name": "Upload to MinIO",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        1248,
+        240
+      ],
+      "credentials": {
+        "s3": {
+          "id": "__S3_CRED_ID",
+          "name": "s3 Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const preserved = $('Preserve Fields').first().json;\n\nconst baseUrl   = '[URL]';\nconst objectKey = preserved.object_key;\nconst minioUrl  = baseUrl + '/mysquad-assets/' + objectKey;\n\nreturn [{\n  json: {\n    tenant_id:    preserved.tenant_id,\n    business_id:  preserved.business_id || null,\n    product_name: preserved.product_name,\n    minio_url:    minioUrl,\n    minio_key:    objectKey,\n    mime_type:    preserved.mime_type,\n    price:        preserved.price || null,\n    price_label:  preserved.price_label || null,\n    upload_source: 'owner_chat'\n  }\n}];"
+      },
+      "id": "__NODE_6__",
+      "name": "Build MinIO URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH upd AS (\n  UPDATE table_2\n  column_1 $3,\n    minio_key     = $4,\n    mime_type     = $5,\n    upload_source = 'owner_chat',\n    price         = CASE WHEN $6::numeric IS NOT NULL THEN $6::numeric ELSE price END,\n    price_label   = CASE WHEN $7 IS NOT NULL AND $7 <> '' THEN $7 ELSE price_label END,\n    updated_at    = now()\n  column_2 $1::uuid\n    column_3 $2\n    AND ($8::uuid IS NULL column_4 $8::uuid)\n  RETURNING product_name, minio_url, price, price_label, 'replaced' AS action\n)\nINSERT INTO table_2\n  (tenant_id, business_id, product_name, display_name, minio_url, minio_key,\n   mime_type, upload_source, image_type, show_on_store, price, price_label)\nSELECT $1::uuid, $8::uuid, $2, $2, $3, $4, $5, 'owner_chat', 'product', true,\n       $6::numeric, NULLIF($7, '')\nWHERE NOT EXISTS (SELECT 1 FROM table_3)\nRETURNING product_name, minio_url, price, price_label, 'saved' AS action;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.tenant_id,\n  $json.product_name,\n  $json.minio_url,\n  $json.minio_key,\n  $json.mime_type,\n  $json.price,\n  $json.price_label || '',\n  $json.business_id\n] }}"
+        }
+      },
+      "id": "__NODE_7__",
+      "name": "Save to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1696,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json;\n\nreturn [{\n  json: {\n    success:      true,\n    action:       row.action || 'saved',\n    product_name: row.product_name,\n    minio_url:    row.minio_url,\n    price:        row.price || null,\n    price_label:  row.price_label || null\n  }\n}];"
+      },
+      "id": "__NODE_8__",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        240
+      ]
+    }
+  ],
+  "connections": {
+    "Incoming Payload": {
+      "main": [
+        [
+          {
+            "node": "Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Input": {
+      "main": [
+        [
+          {
+            "node": "Download Image from Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image from Telegram": {
+      "main": [
+        [
+          {
+            "node": "Preserve Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preserve Fields": {
+      "main": [
+        [
+          {
+            "node": "Upload to MinIO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to MinIO": {
+      "main": [
+        [
+          {
+            "node": "Build MinIO URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build MinIO URL": {
+      "main": [
+        [
+          {
+            "node": "Save to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to DB": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "6f795dbb-1526-4065-ba10-974266734e14",
+  "versionCounter": 8,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-29T23:22:04.830Z",
+      "createdAt": "2026-04-29T23:22:04.830Z",
+      "role": "workflow:owner",
+      "workflowId": "w8e2yw8LkFvBOgtI",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 6f795dbb",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.787180+00:00",
+    "original_name": "MySquad Brand Image Upload",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "Telegram": "table_1",
+      "msq_product_images": "table_2",
+      "upd": "table_3"
+    },
+    "columns_renamed": {
+      "minio_url": "column_1",
+      "tenant_id": "column_2",
+      "product_name": "column_3",
+      "business_id": "column_4"
+    }
+  }
+}

@@ -1,0 +1,546 @@
+{
+  "updatedAt": "2026-05-31T08:47:45.516Z",
+  "createdAt": "2026-04-16T09:35:52.056Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Context Resolver",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"scope\": \"profile\",\n  \"operation\": \"get\",\n  \"reference_text\": \"\",\n  \"exact_id\": \"\",\n  \"tenant_id\": \"\",\n  \"business_id\": \"\",\n  \"limit\": 5\n}"
+      },
+      "id": "__NODE_1__",
+      "name": "Incoming Context Request",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1392,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json || {};\n\nconst scope = String(input.scope || 'profile').trim().toLowerCase();\nconst operation = String(input.operation || 'get').trim().toLowerCase();\nconst source = String(input.source || '').trim();\nconst referenceText = String(input.reference_text || '')\n  .trim()\n  .replace(/^[\"']+|[\"']+$/g, '');\nconst exactId = String(input.exact_id || '').trim();\nconst phoneNo = String(input.phone_no || '').trim();\nconst platformUserId = String(input.platform_user_id || '').trim();\nconst rawTenantId = Array.isArray(input.tenant_id) ? input.tenant_id[0] : input.tenant_id;\nconst tenantId = String(rawTenantId || '').trim();\nconst rawBusinessId = Array.isArray(input.business_id) ? input.business_id[0] : input.business_id;\nconst businessId = String(rawBusinessId || '').trim();\nconst limit = Math.max(1, Math.min(Number(input.limit || 5), 20));\n\nreturn [{\n  json: {\n    scope,\n    operation,\n    reference_text: referenceText,\n    exact_id: exactId,\n    tenant_id: tenantId,\n    business_id: businessId,\n    phone_no: phoneNo,\n    platform_user_id: platformUserId,\n    source,\n    limit\n  }\n}];"
+      },
+      "id": "__NODE_2__",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Normalize Request').first().json.scope }}",
+                    "rightValue": "products",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "products"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $('Normalize Request').first().json.scope }}",
+                    "rightValue": "dispatch",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "dispatch "
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "__NODE_3__",
+      "name": "Route Scope",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1008,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Normalize Request').first().json;\n\nreturn [{\n  json: {\n    success: true,\n    scope: input.scope,\n    operation: input.operation,\n    identity: {\n      business_id: input.business_id || null,\n      resolved: !!input.business_id,\n      matched_by: 'business_id'\n    },\n    found: false,\n    status: 'unsupported',\n    summary: `Scope '${input.scope}' is not supported. Use: products or dispatch.`,\n    data: [],\n    next_questions: [],\n    safe_next_tools: []\n  }\n}];"
+      },
+      "id": "__NODE_4__",
+      "name": "Return Unsupported Scope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -816,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, display_name, canonical_name, minio_url, category,\n       image_type, sort_order, price, price_label, is_available, mime_type\nFROM table_1\ncolumn_1 $1::uuid\n  column_2 COALESCE(NULLIF($4, ''), 'product')\n  column_3 true\n  AND (\n    $3 = ''\n    OR to_tsvector('english', COALESCE(display_name, product_name, ''))\n         @@ plainto_tsquery('english', $3)\n    OR LOWER(COALESCE(display_name, product_name, '')) LIKE '%' || LOWER($3) || '%'\n    OR LOWER(COALESCE(category, '')) LIKE '%' || LOWER($3) || '%'\n  )\nORDER BY sort_order ASC, created_at DESC\nLIMIT $2",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Normalize Request').first().json.business_id,\n  Math.max(1, Math.min(Number($('Normalize Request').first().json.limit) || 10, 40)),\n  $('Normalize Request').first().json.reference_text || '',\n  $('Normalize Request').first().json.image_type || ''\n] }}"
+        }
+      },
+      "id": "__NODE_5__",
+      "name": "Products List",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -816,
+        -96
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Normalize Request').first().json;\nconst rows = $input.all().map(i => i.json).filter(r => r && r.id);\n\nreturn [{\n  json: {\n    success: true,\n    scope: 'products',\n    operation: 'list',\n    identity: {\n      business_id: input.business_id || null,\n      resolved: !!input.business_id,\n      matched_by: 'business_id'\n    },\n    found: rows.length > 0,\n    status: rows.length > 0 ? 'ok' : 'not_found',\n    summary: rows.length > 0\n      ? `Found ${rows.length} product(s).`\n      : 'No products found matching that description.',\n    data: rows.map(r => ({\n      display_name:   r.display_name   || r.product_name,\n      canonical_name: r.canonical_name || null,\n      minio_url:      r.minio_url,\n      category:       r.category       || null,\n      image_type:     r.image_type,\n      sort_order:     r.sort_order,\n      price:          r.price          || null,\n      price_label:    r.price_label    || null,\n      is_available:   r.is_available,\n      mime_type:      r.mime_type\n    })),\n    next_questions: rows.length === 0\n      ? ['Ask if the user wants to upload product images.']\n      : [],\n    safe_next_tools: []\n  }\n}];"
+      },
+      "id": "__NODE_6__",
+      "name": "Format Products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Normalize Request').first().json.operation }}",
+                    "rightValue": "lookup_order",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "lookup_order"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $('Normalize Request').first().json.operation }}",
+                    "rightValue": "list_recent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "list_recent"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -816,
+        256
+      ],
+      "id": "__NODE_7__",
+      "name": "Route Dispatch Operation"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  id,\n  shipment_id,\n  carrier_name,\n  amount,\n  status,\n  payment_status,\n  payment_method,\n  tracking_number,\n  tracking_url,\n  pickup_address,\n  delivery_address,\n  parcel_info,\n  created_at,\n  updated_at\nFROM table_2\ncolumn_1 $1::uuid\nORDER BY created_at DESC\nLIMIT $2",
+        "options": {
+          "queryReplacement": "={{ [  $('Normalize Request').first().json.business_id,  Math.max(1, Math.min(Number($('Normalize Request').first().json.limit) || 5, 10))] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -624,
+        272
+      ],
+      "id": "__NODE_8__",
+      "name": "List Recent",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  id,\n  shipment_id,\n  carrier_name,\n  amount,\n  status,\n  payment_status,\n  payment_method,\n  tracking_number,\n  tracking_url,\n  pickup_address,\n  delivery_address,\n  parcel_info,\n  created_at,\n  updated_at\nFROM table_2\ncolumn_1 $1::uuid\n  AND (\n    (\n      NULLIF($2, '') IS NOT NULL\n      AND (\n        shipment_id = $2\n        OR COALESCE(tracking_number, '') = $2\n        OR COALESCE(parcel_info->>'order_number', '') = $2\n      )\n    )\n    OR\n    (\n      NULLIF($2, '') IS NULL\n      AND NULLIF($3, '') IS NOT NULL\n      AND (\n        shipment_id ILIKE '%' || $3 || '%'\n        OR COALESCE(tracking_number, '') ILIKE '%' || $3 || '%'\n        OR COALESCE(carrier_name, '') ILIKE '%' || $3 || '%'\n        OR COALESCE(parcel_info->>'order_number', '') ILIKE '%' || $3 || '%'\n        OR COALESCE(parcel_info->>'item_name', '') ILIKE '%' || $3 || '%'\n        OR COALESCE(delivery_address->>'name', '') ILIKE '%' || $3 || '%'\n        OR COALESCE(delivery_address->>'phone', '') ILIKE '%' || $3 || '%'\n        OR COALESCE(delivery_address->>'city', '') ILIKE '%' || $3 || '%'\n        OR COALESCE(delivery_address->>'state', '') ILIKE '%' || $3 || '%'\n        OR COALESCE(delivery_address->>'address', '') ILIKE '%' || $3 || '%'\n      )\n    )\n  )\nORDER BY\n  CASE\n    WHEN NULLIF($2, '') IS NOT NULL column_4 $2 THEN 0\n    WHEN NULLIF($2, '') IS NOT NULL AND COALESCE(parcel_info->>'order_number', '') = $2 THEN 1\n    WHEN NULLIF($2, '') IS NOT NULL AND COALESCE(tracking_number, '') = $2 THEN 2\n    ELSE 3\n  END,\n  created_at DESC\nLIMIT $4",
+        "options": {
+          "queryReplacement": "={{ [  $('Normalize Request').first().json.business_id,  $('Normalize Request').first().json.exact_id || '',  $('Normalize Request').first().json.reference_text || '',  Math.max(1, Math.min(Number($('Normalize Request').first().json.limit) || 5, 10))] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -432,
+        112
+      ],
+      "id": "__NODE_9__",
+      "name": "Lookup Order",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $('Normalize Request').first().json.exact_id || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $('Normalize Request').first().json.reference_text || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -624,
+        112
+      ],
+      "id": "__NODE_10__",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Normalize Request').first().json;\n\nreturn [{\n  json: {\n    success: true,\n    scope: 'dispatch',\n    operation: input.operation,\n    identity: {\n      business_id: input.business_id || null,\n      resolved: !!input.business_id,\n      matched_by: 'business_id'\n    },\n    found: false,\n    status: 'unsupported',\n    summary: `Dispatch operation '${input.operation}' is not supported. Use: lookup_order or list_recent.`,\n    data: [],\n    next_questions: [],\n    safe_next_tools: []\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        448
+      ],
+      "id": "__NODE_11__",
+      "name": "Return Unsupported Dispatch Operation"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Normalize Request').first().json;\n\nreturn [{\n  json: {\n    success: true,\n    scope: 'dispatch',\n    operation: 'lookup_order',\n    identity: {\n      business_id: input.business_id || null,\n      resolved: !!input.business_id,\n      matched_by: 'business_id'\n    },\n    found: false,\n    status: 'missing_input',\n    summary: 'Provide a shipment id, order number, tracking number, or a short dispatch reference.',\n    data: [],\n    next_questions: [\n      'Ask for the shipment ID, order number, tracking number, destination city, carrier, or item name.'\n    ],\n    safe_next_tools: []\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        -48
+      ],
+      "id": "__NODE_12__",
+      "name": "Return Missing Dispatch Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Normalize Request').first().json;\nconst rows = $input.all().map(item => item.json).filter(row => row && row.id);\n\nfunction parseJson(value) {\n  if (!value) return {};\n  if (typeof value === 'object') return value;\n  try {\n    return JSON.parse(value);\n  } catch {\n    return {};\n  }\n}\n\nfunction normalizeRow(row) {\n  const delivery = parseJson(row.delivery_address);\n  const parcel = parseJson(row.parcel_info);\n\n  return {\n    shipment_id: row.shipment_id,\n    order_number: parcel.order_number || null,\n    carrier: row.carrier_name || null,\n    status: row.status || null,\n    payment_status: row.payment_status || null,\n    payment_method: row.payment_method || null,\n    tracking_number: row.tracking_number || null,\n    tracking_url: row.tracking_url || null,\n    amount: row.amount ?? null,\n    item_name: parcel.item_name || null,\n    recipient_name: delivery.name || delivery.recipient_name || null,\n    recipient_phone: delivery.phone || delivery.recipient_phone || null,\n    destination_city: delivery.city || null,\n    destination_text: [\n      delivery.address,\n      delivery.city,\n      delivery.state\n    ].filter(Boolean).join(', ') || null,\n    created_at: row.created_at || null,\n    updated_at: row.updated_at || null\n  };\n}\n\nif (rows.length === 0) {\n  return [{\n    json: {\n      success: true,\n      scope: 'dispatch',\n      operation: 'lookup_order',\n      identity: {\n        business_id: input.business_id || null,\n        resolved: !!input.business_id,\n        matched_by: 'business_id'\n      },\n      found: false,\n      status: 'not_found',\n      summary: 'No dispatch order matched that reference.',\n      data: [],\n      next_questions: [\n        'Ask for a shipment ID, tracking number, order number, destination city, or item name.'\n      ],\n      safe_next_tools: []\n    }\n  }];\n}\n\nif (rows.length > 1) {\n  return [{\n    json: {\n      success: true,\n      scope: 'dispatch',\n      operation: 'lookup_order',\n      identity: {\n        business_id: input.business_id || null,\n        resolved: !!input.business_id,\n        matched_by: 'business_id'\n      },\n      found: true,\n      status: 'ambiguous',\n      summary: `Found ${rows.length} matching dispatch orders. Clarification needed.`,\n      data: rows.map(normalizeRow).map(row => ({\n        shipment_id: row.shipment_id,\n        order_number: row.order_number,\n        carrier: row.carrier,\n        status: row.status,\n        tracking_number: row.tracking_number,\n        destination_city: row.destination_city,\n        item_name: row.item_name,\n        created_at: row.created_at\n      })),\n      next_questions: [\n        'Ask which shipment they mean using shipment ID, order number, carrier, destination, or date.'\n      ],\n      safe_next_tools: []\n    }\n  }];\n}\n\nconst match = normalizeRow(rows[0]);\n\nreturn [{\n  json: {\n    success: true,\n    scope: 'dispatch',\n    operation: 'lookup_order',\n    identity: {\n      business_id: input.business_id || null,\n      resolved: !!input.business_id,\n      matched_by: 'business_id'\n    },\n    found: true,\n    status: 'ok',\n    summary: `Found dispatch order ${match.shipment_id}${match.order_number ? ` for ${match.order_number}` : ''}.`,\n    data: match,\n    next_questions: [],\n    safe_next_tools: ['Terminal_Track Dispatch']\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        112
+      ],
+      "id": "__NODE_13__",
+      "name": "Format Dispatch Lookup"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Normalize Request').first().json;\nconst rows = $input.all().map(item => item.json).filter(row => row && row.id);\n\nfunction parseJson(value) {\n  if (!value) return {};\n  if (typeof value === 'object') return value;\n  try {\n    return JSON.parse(value);\n  } catch {\n    return {};\n  }\n}\n\nconst data = rows.map(row => {\n  const delivery = parseJson(row.delivery_address);\n  const parcel = parseJson(row.parcel_info);\n\n  return {\n    shipment_id: row.shipment_id,\n    order_number: parcel.order_number || null,\n    carrier: row.carrier_name || null,\n    status: row.status || null,\n    payment_status: row.payment_status || null,\n    payment_method: row.payment_method || null,\n    tracking_number: row.tracking_number || null,\n    tracking_url: row.tracking_url || null,\n    amount: row.amount ?? null,\n    item_name: parcel.item_name || null,\n    recipient_name: delivery.name || delivery.recipient_name || null,\n    recipient_phone: delivery.phone || delivery.recipient_phone || null,\n    destination_city: delivery.city || null,\n    destination_text: [\n      delivery.address,\n      delivery.city,\n      delivery.state\n    ].filter(Boolean).join(', ') || null,\n    created_at: row.created_at || null,\n    updated_at: row.updated_at || null\n  };\n});\n\nreturn [{\n  json: {\n    success: true,\n    scope: 'dispatch',\n    operation: 'list_recent',\n    identity: {\n      business_id: input.business_id || null,\n      resolved: !!input.business_id,\n      matched_by: 'business_id'\n    },\n    found: data.length > 0,\n    status: data.length > 0 ? 'ok' : 'not_found',\n    summary: data.length > 0\n      ? `Found ${data.length} recent dispatch order(s).`\n      : 'No dispatch orders found for this business.',\n    data,\n    next_questions: data.length === 0\n      ? ['Ask if they want to arrange a new delivery.']\n      : [],\n    safe_next_tools: data.length > 0 ? ['Terminal_Track Dispatch'] : []\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        272
+      ],
+      "id": "__NODE_14__",
+      "name": "Format Dispatch Recent"
+    }
+  ],
+  "connections": {
+    "Incoming Context Request": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Route Scope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Scope": {
+      "main": [
+        [
+          {
+            "node": "Products List",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route Dispatch Operation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Unsupported Scope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Products List": {
+      "main": [
+        [
+          {
+            "node": "Format Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Dispatch Operation": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "List Recent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Unsupported Dispatch Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Return Missing Dispatch Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lookup Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Order": {
+      "main": [
+        [
+          {
+            "node": "Format Dispatch Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Recent": {
+      "main": [
+        [
+          {
+            "node": "Format Dispatch Recent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "d18c5e96-0cdf-4282-9315-678d41fe5e03",
+  "versionCounter": 370,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-16T09:35:52.056Z",
+      "createdAt": "2026-04-16T09:35:52.056Z",
+      "role": "workflow:owner",
+      "workflowId": "IyoIY8owu4gs8Emj",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version d18c5e96",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.822965+00:00",
+    "original_name": "MySquad Context Resolver",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_product_images": "table_1",
+      "msq_dispatch_orders": "table_2"
+    },
+    "columns_renamed": {
+      "business_id": "column_1",
+      "image_type": "column_2",
+      "show_on_store": "column_3",
+      "shipment_id": "column_4"
+    }
+  }
+}

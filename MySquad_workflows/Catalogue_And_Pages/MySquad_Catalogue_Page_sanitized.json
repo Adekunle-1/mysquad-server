@@ -1,0 +1,212 @@
+{
+  "updatedAt": "2026-06-04T14:34:02.091Z",
+  "createdAt": "2026-05-30T12:10:07.642Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Catalogue Page",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "store",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "__NODE_1__",
+      "name": "Store Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        2272,
+        336
+      ],
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  bp.id             AS business_id,\n  bp.tenant_id,\n  bp.business_name,\n  bp.description,\n  bp.location,\n  bp.store_token,\n  bp.logo_url,\n  bp.business_mode,\n  pi_tg.bot_username,\n  pi_tg.access_token  AS bot_token,\n  t.whatsapp_no       AS wa_number\nFROM table_1 bp\nLEFT JOIN table_2 t\n  ON t.id = bp.tenant_id\nLEFT JOIN table_3 pi_tg\n  ON pi_tg.business_id = bp.id\n  AND pi_tg.platform = 'telegram'\n  AND pi_tg.is_active = true\nWHERE bp.store_token = $1\nLIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [$('Store Webhook').first().json.query.id || ''] }}"
+        }
+      },
+      "id": "__NODE_2__",
+      "name": "Fetch Business Profile",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2512,
+        336
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  COALESCE(display_name, product_name) AS display_name,\n  product_name                          AS canonical_name,\n  minio_url,\n  price,\n  price_label,\n  COALESCE(show_on_store, true)         AS is_available,\n  COALESCE(image_type, 'product')       AS image_type,\n  sort_order\nFROM table_4\ncolumn_1 $1::uuid\n  AND COALESCE(show_on_store, true) = true\n  AND COALESCE(image_type, 'product') = 'product'\nORDER BY sort_order ASC NULLS LAST, created_at DESC\nLIMIT 50",
+        "options": {
+          "queryReplacement": "={{ [$('Fetch Business Profile').first().json.business_id] }}"
+        }
+      },
+      "id": "__NODE_3__",
+      "name": "Fetch Products",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2752,
+        336
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst biz         = $('Fetch Business Profile').first().json;\nconst productRows = $('Fetch Products').all().map(i => i.json).filter(r => r && r.display_name);\nconst webhook     = $('Store Webhook').first().json;\nconst query       = webhook.query || {};\n\nconst platform   = (Array.isArray(query.plt) ? query.plt[0] : (query.plt || 'telegram')).toLowerCase();\nconst chatId     = Array.isArray(query.cid) ? query.cid[0] : (query.cid || '');\nconst storeToken = biz.store_token || '';\nconst bizMode    = (biz.business_mode || 'product_only');\nconst isService  = bizMode === 'service_only';\nconst botUsername = biz.bot_username || (Array.isArray(query.bot) ? query.bot[0] : (query.bot || ''));\nconst waNumber    = (biz.wa_number   || query.wa  || '').replace(/\\D/g, '');\n\nif (!biz || !biz.business_id) {\n  return [{ json: { html: '<!DOCTYPE html><html><head><meta charset=\"UTF-8\"/><meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\"/><title>Not found</title><style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#F5F4F2}.c{background:#fff;border-radius:16px;padding:40px;text-align:center;max-width:400px;box-shadow:0 4px 16px rgba(0,0,0,.08)}h2{color:#F13A01}p{color:#6B6560;font-size:14px;line-height:1.7;margin-top:8px}</style></head><body><div class=\"c\"><h2>Store not found</h2><p>This link may have expired or been removed.</p></div></body></html>' }}];\n}\n\nconst bizName = (biz.business_name || 'Our Store').replace(/</g,'&lt;').replace(/>/g,'&gt;');\nconst bizDesc = (biz.description || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');\nconst bizLoc  = (biz.location || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');\n\nconst sendLabel  = isService ? 'Send enquiry' : 'Send to chat';\nconst trayLabel  = isService ? 'Your enquiry' : 'Your selection';\n\nfunction fmtPrice(price, priceLabel) {\n  if (priceLabel) return priceLabel.replace(/</g,'&lt;').replace(/>/g,'&gt;');\n  if (price !== null && price !== undefined && price !== '') {\n    return '\\u20a6' + Number(price).toLocaleString('en-NG');\n  }\n  return null;\n}\n\nconst productData = productRows.map((p, i) => ({\n  i:          i,\n  name:       (p.display_name || 'Product'),\n  price:      (p.price !== null && p.price !== undefined && p.price !== '') ? Number(p.price) : null,\n  priceLabel: p.price_label || null,\n  available:  p.is_available !== false\n}));\nconst productDataJson = JSON.stringify(productData);\n\nfunction buildCard(p, i) {\n  const name  = (p.display_name || 'Product').replace(/</g,'&lt;').replace(/>/g,'&gt;');\n  const price = fmtPrice(p.price, p.price_label);\n  const avail = p.is_available !== false;\n\n  let imgHtml = '';\n  if (p.minio_url) {\n    const safeUrl = p.minio_url.replace(/\"/g, '&quot;');\n    imgHtml = '<img src=\"' + safeUrl + '\" alt=\"' + name + '\" loading=\"lazy\" onerror=\"this.style.display=\\'none\\'\">';\n  } else {\n    imgHtml = '<div class=\"img-ph\">&#128230;</div>';\n  }\n\n  let priceHtml = '';\n  if (!avail) {\n    priceHtml = '<span class=\"badge-oos\">Out of stock</span>';\n  } else if (price) {\n    priceHtml = '<div class=\"price\">' + price + '</div>';\n  } else {\n    priceHtml = '<div class=\"price-unknown\">Price on request</div>';\n  }\n\n  const selBtn = avail\n    ? '<button class=\"btn-select\" id=\"sel-' + i + '\" onclick=\"toggle(' + i + ')\">Select</button>'\n      + '<div class=\"qty-row\" id=\"qty-' + i + '\">'\n      + '<button class=\"qty-btn\" onclick=\"decQty(' + i + ')\">&#8722;</button>'\n      + '<span class=\"qty-val\" id=\"qval-' + i + '\">1</span>'\n      + '<button class=\"qty-btn\" onclick=\"incQty(' + i + ')\">+</button>'\n      + '</div>'\n    : '';\n\n  return '<div class=\"card\" id=\"card-' + i + '\">'\n    + '<div class=\"card-img\">' + imgHtml + '</div>'\n    + '<div class=\"card-body\">'\n    + '<div class=\"card-name\">' + name + '</div>'\n    + priceHtml\n    + selBtn\n    + '</div></div>';\n}\n\nconst cardsHtml = productRows.length\n  ? productRows.map((p, i) => buildCard(p, i)).join('')\n  : '<div class=\"empty\"><div class=\"empty-icon\">&#128717;</div><p>No products yet.</p></div>';\n\nconst descSnippet = bizLoc\n  ? '<p>&#128205; ' + bizLoc + '</p>'\n  : bizDesc\n  ? '<p>' + bizDesc.substring(0, 55) + (bizDesc.length > 55 ? '&hellip;' : '') + '</p>'\n  : '';\n\n// \u2500\u2500 Build HTML using string concatenation \u2014 no template literals \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n// Browser JS is embedded as plain string concatenation lines\n// to avoid any escaping issues with n8n's code node\n\nconst bizId    = biz.business_id || '';\nconst ENDPOINT = '[URL]';\n\nconst scriptLines = [\n  'var PRODUCTS='   + productDataJson + ';',\n  'var PLATFORM=\"'  + platform    + '\";',\n  'var CHAT_ID=\"'   + chatId      + '\";',\n  'var STORE_TOKEN=\"'+ storeToken  + '\";',\n  'var BIZ_ID=\"'    + bizId        + '\";',\n  'var BOT_USERNAME=\"'+ botUsername + '\";',\n  'var WA_NUMBER=\"' + waNumber     + '\";',\n  'var ENDPOINT=\"'  + ENDPOINT     + '\";',\n  'var state={};',\n  'function fmt(p){return \"\\u20a6\"+Number(p).toLocaleString(\"en-NG\");}',\n  'function toggle(i){var p=PRODUCTS[i];if(!p.available)return;var k=p.name;if(state[k]){delete state[k];}else{state[k]={qty:1,price:p.price,priceLabel:p.priceLabel};}renderCard(i);renderTray();}',\n  'function incQty(i){var k=PRODUCTS[i].name;if(state[k]&&state[k].qty<20){state[k].qty++;renderCard(i);renderTray();}}',\n  'function decQty(i){var k=PRODUCTS[i].name;if(!state[k])return;if(state[k].qty<=1){delete state[k];renderCard(i);renderTray();return;}state[k].qty--;renderCard(i);renderTray();}',\n  'function renderCard(i){var p=PRODUCTS[i];var k=p.name;var sel=!!state[k];var card=document.getElementById(\"card-\"+i);var btn=document.getElementById(\"sel-\"+i);var qrow=document.getElementById(\"qty-\"+i);var qval=document.getElementById(\"qval-\"+i);if(!btn)return;card.classList.toggle(\"selected\",sel);btn.classList.toggle(\"active\",sel);btn.textContent=sel?\"Selected\":\"Select\";if(qrow)qrow.className=\"qty-row\"+(sel?\" visible\":\"\");if(qval&&state[k])qval.textContent=state[k].qty;}',\n  'function renderTray(){var keys=Object.keys(state);var tray=document.getElementById(\"tray\");var sum=document.getElementById(\"traySummary\");var btn=document.getElementById(\"btnSend\");if(!keys.length){tray.className=\"tray\";btn.disabled=true;return;}tray.className=\"tray visible\";var parts=keys.map(function(k){var s=state[k];var pr=s.price!==null?(s.priceLabel||fmt(s.price)):\"price TBC\";return s.qty>1?s.qty+\"x \"+k+\" (\"+pr+\")\":k+\" (\"+pr+\")\";});sum.textContent=parts.join(\" \\u00b7 \");btn.disabled=false;}',\n  'function numToWords(n){var w=[\"one\",\"two\",\"three\",\"four\",\"five\",\"six\",\"seven\",\"eight\",\"nine\",\"ten\",\"eleven\",\"twelve\",\"thirteen\",\"fourteen\",\"fifteen\",\"sixteen\",\"seventeen\",\"eighteen\",\"nineteen\",\"twenty\"];return(n>=1&&n<=20)?w[n-1]:String(n);}function buildMsg(){var keys=Object.keys(state);var orders=keys.filter(function(k){return state[k].price!==null;});var asks=keys.filter(function(k){return state[k].price===null;});var parts=[];if(orders.length){var op=orders.map(function(k){var s=state[k];if(s.qty===1) return \"one \"+k;var pl=k.match(/[sxz]$/i)||k.match(/(sh|ch)$/i)?k:k+\"s\";return numToWords(s.qty)+\" \"+(s.qty>1?pl:k);});if(op.length===1) parts.push(\"I want to order \"+op[0]);else parts.push(\"I want to order \"+op.slice(0,-1).join(\", \")+\" and \"+op[op.length-1]);}if(asks.length){var ap=asks.map(function(k){var s=state[k];if(s.qty===1) return \"one \"+k;var pl=k.match(/[sxz]$/i)||k.match(/(sh|ch)$/i)?k:k+\"s\";return numToWords(s.qty)+\" \"+(s.qty>1?pl:k);});if(ap.length===1) parts.push(\"I would like the price for \"+ap[0]);else parts.push(\"I would like the price for \"+ap.slice(0,-1).join(\", \")+\" and \"+ap[ap.length-1]);}return parts.join(\". \")+\".\";}',\n  'function showConfirm(){var ob=document.getElementById(\"overlayBody\");ob.textContent=PLATFORM===\"telegram\"?\"Head back to the chat \\u2014 your message was sent!\":\"Head back to WhatsApp \\u2014 your message was sent!\";document.getElementById(\"overlay\").className=\"overlay visible\";document.getElementById(\"overlay\").onclick=function(){this.className=\"overlay\";};}',\n  'document.getElementById(\"btnSend\").addEventListener(\"click\",function(){',\n  '  var keys=Object.keys(state);if(!keys.length)return;',\n  '  var btn=this;btn.disabled=true;btn.textContent=\"Sending...\";',\n  '  var items=keys.map(function(k){var s=state[k];return{product:k,quantity:s.qty,price:s.price,priceLabel:s.priceLabel,askPrice:s.price===null};});',\n  '  var msg=buildMsg();',\n  '  if(CHAT_ID && PLATFORM===\"telegram\"){',\n  '    fetch(ENDPOINT,{',\n  '      method:\"POST\",',\n  '      headers:{\"Content-Type\":\"application/json\"},',\n  '      body:JSON.stringify({store_token:STORE_TOKEN,biz_id:BIZ_ID,platform:PLATFORM,chat_id:CHAT_ID,items:items,message:msg})',\n  '    }).then(function(r){',\n  '      if(!r.ok){',\n  '        return r.text().then(function(t){',\n  '          btn.disabled=false;btn.textContent=\"Send to chat \\u2192\";',\n  '          alert(\"Error \"+r.status+\" from table_5:\\\\n\"+t.substring(0,300));',\n  '        });',\n  '      }',\n  '      showConfirm();',\n  '    }).catch(function(e){',\n  '      btn.disabled=false;btn.textContent=\"Send to chat \\u2192\";',\n  '      alert(\"Network error:\\\\n\"+(e&&e.message?e.message:String(e)));',\n  '    });',\n  '  } else {',\n  '    var enc=encodeURIComponent(msg);',\n  '    var url=PLATFORM===\"whatsapp\"?\"[URL]\"+WA_NUMBER+\"?text=\"+enc:\"[URL]\"+BOT_USERNAME+\"?start=store_enquiry\";',\n  '    window.open(url,\"_blank\");',\n  '    showConfirm();',\n  '  }',\n  '});',\n].join('\\n');\n\nconst html = '<!DOCTYPE html>'\n+ '<html lang=\"en\">'\n+ '<head>'\n+ '<meta charset=\"UTF-8\"/>'\n+ '<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\"/>'\n+ '<title>' + bizName + '</title>'\n+ '<style>'\n+ ':root{--accent:#F13A01;--accent-dark:#C42D00;--accent-pale:#FFF5F2;--text:#1C1917;--text-muted:#6B6560;--border:#E8E5E2;--bg:#F5F4F2;--surface:#fff;--radius:14px;--tray-h:72px;}'\n+ '@media(prefers-color-scheme:dark){:root{--text:#F0EDE8;--text-muted:#9C9189;--border:#2E2926;--bg:#141210;--surface:#1E1B18;--accent-pale:rgba(241,58,1,.08);}}'\n+ '*{box-sizing:border-box;margin:0;padding:0;}'\n+ 'body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:calc(var(--tray-h) + 24px);}'\n+ '.header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;}'\n+ '.header-info h1{font-size:16px;font-weight:700;line-height:1.2;}'\n+ '.header-info p{font-size:11px;color:var(--text-muted);margin-top:2px;}'\n+ '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(156px,1fr));gap:12px;padding:16px 14px;}'\n+ '.card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;transition:border-color .15s;}'\n+ '.card.selected{border-color:var(--accent);}'\n+ '.card-img{width:100%;aspect-ratio:1;overflow:hidden;background:var(--bg);display:flex;align-items:center;justify-content:center;}'\n+ '.card-img img{width:100%;height:100%;object-fit:cover;display:block;}'\n+ '.img-ph{font-size:32px;}'\n+ '.card-body{padding:10px 10px 12px;display:flex;flex-direction:column;gap:6px;flex:1;}'\n+ '.card-name{font-size:13px;font-weight:600;line-height:1.3;}'\n+ '.price{font-size:14px;font-weight:700;color:var(--accent);}'\n+ '.price-unknown{font-size:12px;color:var(--text-muted);font-style:italic;}'\n+ '.badge-oos{font-size:11px;font-weight:600;background:#FEF2F2;color:#DC2626;padding:2px 8px;border-radius:20px;display:inline-block;}'\n+ '.btn-select{display:flex;align-items:center;justify-content:center;width:100%;padding:9px 10px;border-radius:10px;font-size:13px;font-weight:700;border:1.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;transition:all .15s;margin-top:auto;}'\n+ '.btn-select:hover{border-color:var(--accent);color:var(--accent);}'\n+ '.btn-select.active{background:var(--accent);border-color:var(--accent);color:#fff;}'\n+ '.qty-row{display:none;align-items:center;justify-content:space-between;padding:6px 0 0;}'\n+ '.qty-row.visible{display:flex;}'\n+ '.qty-btn{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--border);background:var(--surface);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text);transition:all .15s;flex-shrink:0;}'\n+ '.qty-btn:hover{border-color:var(--accent);color:var(--accent);}'\n+ '.qty-val{font-size:15px;font-weight:700;min-width:24px;text-align:center;}'\n+ '.empty{text-align:center;padding:60px 20px;color:var(--text-muted);}'\n+ '.tray{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:12px;z-index:200;height:var(--tray-h);transform:translateY(100%);transition:transform .25s ease;}'\n+ '.tray.visible{transform:translateY(0);}'\n+ '.tray-info{flex:1;min-width:0;}'\n+ '.tray-label{font-size:11px;color:var(--text-muted);margin-bottom:2px;}'\n+ '.tray-summary{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'\n+ '.btn-send{background:var(--accent);color:#fff;border:none;border-radius:12px;padding:0 20px;height:48px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:background .15s;}'\n+ '.btn-send:hover{background:var(--accent-dark);}'\n+ '.btn-send:disabled{opacity:.5;cursor:not-allowed;}'\n+ '.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:300;opacity:0;pointer-events:none;transition:opacity .2s;}'\n+ '.overlay.visible{opacity:1;pointer-events:all;}'\n+ '.overlay-card{background:var(--surface);border-radius:20px;padding:32px 24px;text-align:center;max-width:320px;width:90%;}'\n+ '.overlay-icon{font-size:40px;margin-bottom:12px;}'\n+ '.overlay-title{font-size:18px;font-weight:700;margin-bottom:8px;}'\n+ '.overlay-body{font-size:14px;color:var(--text-muted);line-height:1.6;}'\n+ '.powered{text-align:center;padding:20px 16px 8px;font-size:11px;color:var(--text-muted);}'\n+ '@media(max-width:380px){.grid{grid-template-columns:repeat(2,1fr);gap:10px;padding:12px;}}'\n+ '</style>'\n+ '</head>'\n+ '<body>'\n+ '<div class=\"header\">'\n+ '<div class=\"header-info\"><h1>' + bizName + '</h1>' + descSnippet + '</div>'\n+ '</div>'\n+ '<div class=\"grid\">' + cardsHtml + '</div>'\n+ '<div class=\"powered\">Powered by MySquad</div>'\n+ '<div class=\"tray\" id=\"tray\">'\n+ '<div class=\"tray-info\">'\n+ '<div class=\"tray-label\">' + trayLabel + '</div>'\n+ '<div class=\"tray-summary\" id=\"traySummary\"></div>'\n+ '</div>'\n+ '<button class=\"btn-send\" id=\"btnSend\" disabled>' + sendLabel + ' &rarr;</button>'\n+ '</div>'\n+ '<div class=\"overlay\" id=\"overlay\">'\n+ '<div class=\"overlay-card\">'\n+ '<div class=\"overlay-icon\">&#10004;&#65039;</div>'\n+ '<div class=\"overlay-title\">Sent!</div>'\n+ '<div class=\"overlay-body\" id=\"overlayBody\">Head back to the chat for your response.</div>'\n+ '</div></div>'\n+ '<script>' + scriptLines + '</script>'\n+ '</body></html>';\n\nreturn [{ json: { html } }];\n"
+      },
+      "id": "__NODE_4__",
+      "name": "Build Store HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2992,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "__NODE_5__",
+      "name": "Serve Store Page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        3232,
+        336
+      ]
+    }
+  ],
+  "connections": {
+    "Store Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch Business Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Business Profile": {
+      "main": [
+        [
+          {
+            "node": "Fetch Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Products": {
+      "main": [
+        [
+          {
+            "node": "Build Store HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Store HTML": {
+      "main": [
+        [
+          {
+            "node": "Serve Store Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "5f436bbf-5de9-413a-a2f1-46ea8bb00d0c",
+  "versionCounter": 55,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-05-30T12:10:07.642Z",
+      "createdAt": "2026-05-30T12:10:07.642Z",
+      "role": "workflow:owner",
+      "workflowId": "GXFN0B469qWjaOIG",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 5f436bbf",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.812877+00:00",
+    "original_name": "MySquad Catalogue Page",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_business_profiles": "table_1",
+      "msq_tenants": "table_2",
+      "msq_platform_integrations": "table_3",
+      "msq_product_images": "table_4",
+      "server": "table_5"
+    },
+    "columns_renamed": {
+      "business_id": "column_1"
+    }
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "updatedAt": "2026-06-02T21:21:33.822Z",
+  "createdAt": "2026-06-02T21:05:04.267Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Catalogue Generate Link",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\"tenant_id\":\"uuid\",\"business_id\":\"uuid\"}"
+      },
+      "id": "__NODE_1__",
+      "name": "Incoming Payload",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -128,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst input = $input.first().json;\nconst tenantId   = input.tenant_id;\nconst businessId = input.business_id;\nif (!tenantId || !businessId) throw new Error('Missing tenant_id or business_id');\n\nconst token = 'msqcat_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);\nconst url = '[URL]' + token;\n\nreturn [{ json: { token, tenant_id: tenantId, business_id: businessId, url } }];\n"
+      },
+      "id": "__NODE_2__",
+      "name": "Generate Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_1 (token, tenant_id, business_id, expires_at) VALUES ($1, $2::uuid, $3::uuid, now() + interval '7 days') ON CONFLICT (token) DO NOTHING RETURNING token",
+        "options": {
+          "queryReplacement": "={{ [$json.token, $json.tenant_id, $json.business_id] }}"
+        }
+      },
+      "id": "__NODE_3__",
+      "name": "Save Catalogue Session",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        352,
+        32
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { url: $('Generate Token').first().json.url } }];"
+      },
+      "id": "__NODE_4__",
+      "name": "Return Link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        32
+      ]
+    }
+  ],
+  "connections": {
+    "Incoming Payload": {
+      "main": [
+        [
+          {
+            "node": "Generate Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Token": {
+      "main": [
+        [
+          {
+            "node": "Save Catalogue Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Catalogue Session": {
+      "main": [
+        [
+          {
+            "node": "Return Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "3931dfaf-eebc-4bfe-80c4-626d64bcc72d",
+  "versionCounter": 10,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-06-02T21:05:04.267Z",
+      "createdAt": "2026-06-02T21:05:04.267Z",
+      "role": "workflow:owner",
+      "workflowId": "30ohAy06BF7YlbLl",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 3931dfaf",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.794262+00:00",
+    "original_name": "MySquad Catalogue Generate Link",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_catalogue_sessions": "table_1"
+    },
+    "columns_renamed": {}
+  }
+}

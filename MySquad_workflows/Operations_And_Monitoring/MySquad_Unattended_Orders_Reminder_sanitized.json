@@ -1,0 +1,241 @@
+{
+  "updatedAt": "2026-05-03T08:42:01.276Z",
+  "createdAt": "2026-05-03T08:34:26.169Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Unattended Orders Reminder",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 4
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "__NODE_1__",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  co.order_number,\n  co.status,\n  co.total_amount,\n  co.items,\n  co.delivery_type,\n  co.appointment_datetime,\n  co.customer_notes,\n  co.created_at,\n  co.customer_chat_id,\n  b.id AS business_id,\n  b.business_name,\n  t.telegram_id AS owner_telegram_id,\n  t.preferred_name AS owner_name,\n  pi.access_token AS bot_token,\n  EXTRACT(EPOCH FROM (now() - co.created_at)) / 3600 AS hours_waiting\nFROM table_1 co\nJOIN table_2 b ON b.id = co.business_id\nJOIN table_3 t ON t.id = co.tenant_id\nJOIN table_4 pi\n  ON pi.business_id = co.business_id AND pi.platform = 'telegram'\nWHERE co.status IN ('placed', 'enquiry')\n  AND co.created_at < now() - INTERVAL '2 hours'\n  AND co.payment_status NOT IN ('confirmed')\nORDER BY co.business_id, co.created_at ASC",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "__NODE_2__",
+      "name": "Fetch Unattended Orders",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $json.order_number }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "__NODE_3__",
+      "name": "Any Unattended?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\n\n// Group orders by business_id\nconst grouped = {};\nfor (const order of items) {\n  const key = order.business_id;\n  if (!grouped[key]) {\n    grouped[key] = {\n      business_id:       order.business_id,\n      business_name:     order.business_name,\n      owner_telegram_id: order.owner_telegram_id,\n      owner_name:        order.owner_name,\n      bot_token:         order.bot_token,\n      orders:            []\n    };\n  }\n  grouped[key].orders.push({\n    order_number:         order.order_number,\n    status:               order.status,\n    total_amount:         order.total_amount,\n    items:                order.items,\n    delivery_type:        order.delivery_type,\n    appointment_datetime: order.appointment_datetime,\n    customer_notes:       order.customer_notes,\n    customer_chat_id:     order.customer_chat_id,\n    hours_waiting:        Math.round(order.hours_waiting * 10) / 10\n  });\n}\n\n// Return one item per business\nreturn Object.values(grouped).map(biz => ({ json: biz }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        0
+      ],
+      "id": "__NODE_4__",
+      "name": "Group by Business"
+    },
+    {
+      "parameters": {
+        "jsCode": "const biz = $input.item.json;\nconst orders = biz.orders;\n\nconst orderLines = orders.map(o => {\n  let itemsText = '';\n  try {\n    const parsed = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;\n    if (Array.isArray(parsed)) {\n      itemsText = parsed.map(i => (i.quantity || 1) + 'x ' + i.name).join(', ');\n    }\n  } catch(e) {}\n\n  let timeLabel = '';\n  if (o.hours_waiting < 24) {\n    timeLabel = Math.round(o.hours_waiting) + 'h ago';\n  } else {\n    timeLabel = Math.round(o.hours_waiting / 24) + 'd ago';\n  }\n\n  let appointmentText = '';\n  if (o.appointment_datetime) {\n    try {\n      const dt = new Date(o.appointment_datetime);\n      appointmentText = ' | ' + dt.toLocaleString('en-NG', {\n        timeZone: 'Africa/Lagos',\n        weekday: 'short', month: 'short', day: 'numeric',\n        hour: '2-digit', minute: '2-digit'\n      });\n    } catch(e) {}\n  }\n\n  const statusEmoji = o.status === 'enquiry' ? '\ud83d\udcac' : '\ud83d\uded2';\n\n  return `${statusEmoji} *${o.order_number}* \u2014 ${timeLabel}\\n` +\n         (itemsText ? `Items: ${itemsText}\\n` : '') +\n         (o.total_amount ? `Total: \u20a6${Number(o.total_amount).toLocaleString()}\\n` : '') +\n         (appointmentText ? `Appointment:${appointmentText}\\n` : '') +\n         (o.customer_notes ? `Notes: ${o.customer_notes}\\n` : '');\n}).join('\\n');\n\nconst count = orders.length;\nconst plural = count === 1 ? 'order' : 'orders';\n\nconst message = `\u23f0 *${count} unattended ${plural} need your attention!*\\n\\n` +\n  orderLines +\n  `\\nReply to each customer or confirm via your bot to clear these.`;\n\nreturn {\n  json: {\n    bot_token:         biz.bot_token,\n    owner_telegram_id: biz.owner_telegram_id,\n    business_name:     biz.business_name,\n    message\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        0
+      ],
+      "id": "__NODE_5__",
+      "name": "Build Reminder Message"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  chat_id: String($json.owner_telegram_id),\n  text: $json.message,\n  parse_mode: 'Markdown'\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1056,
+        0
+      ],
+      "id": "__NODE_6__",
+      "name": "Send Reminder to Owner",
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Unattended Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Unattended Orders": {
+      "main": [
+        [
+          {
+            "node": "Any Unattended?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Unattended?": {
+      "main": [
+        [
+          {
+            "node": "Group by Business",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group by Business": {
+      "main": [
+        [
+          {
+            "node": "Build Reminder Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reminder Message": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder to Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": {
+    "node:Schedule Trigger": {
+      "recurrenceRules": []
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "f9943261-2a11-4df8-a3bd-5cda0b665de6",
+  "versionCounter": 28,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-05-03T08:34:26.169Z",
+      "createdAt": "2026-05-03T08:34:26.169Z",
+      "role": "workflow:owner",
+      "workflowId": "VLPdxAJax74cGC7L",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version f9943261",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:22.054713+00:00",
+    "original_name": "MySquad Unattended Orders Reminder",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_customer_orders": "table_1",
+      "msq_business_profiles": "table_2",
+      "msq_tenants": "table_3",
+      "msq_platform_integrations": "table_4"
+    },
+    "columns_renamed": {}
+  }
+}

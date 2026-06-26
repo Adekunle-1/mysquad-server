@@ -1,0 +1,1741 @@
+{
+  "name": "Google Sub Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"query\": \"string\",\n  \"tenant_id\": \"uuid-string\",\n  \"messaging_channel\": \"string\"\n}"
+      },
+      "id": "__NODE_1__",
+      "typeVersion": 1.1,
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        16,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ============================================================\n-- MySquad Migration: v10.0 \u2192 v11.0 (fixed)\n-- Run this on an EXISTING database. Does NOT drop any tables.\n-- Safe to run multiple times (uses IF NOT EXISTS / DO blocks).\n-- ============================================================\n\n-- \u2500\u2500 msq_product_images: 9 new columns \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\nALTER TABLE msq_product_images\n    ADD COLUMN IF NOT EXISTS image_type     text        NOT NULL DEFAULT 'product'\n                                            CHECK (image_type IN ('logo','product','portfolio','banner')),\n    ADD COLUMN IF NOT EXISTS display_name   text,\n    ADD COLUMN IF NOT EXISTS canonical_name text,\n    ADD COLUMN IF NOT EXISTS category       text,\n    ADD COLUMN IF NOT EXISTS sort_order     int         NOT NULL DEFAULT 0,\n    ADD COLUMN IF NOT EXISTS show_on_store  boolean     NOT NULL DEFAULT true,\n    ADD COLUMN IF NOT EXISTS price          numeric(12,2),\n    ADD COLUMN IF NOT EXISTS price_label    text,\n    ADD COLUMN IF NOT EXISTS is_available   boolean     NOT NULL DEFAULT true;\n\n-- Migrate: populate display_name from table_1 product_name\nUPDATE table_2\ncolumn_1 product_name\nWHERE display_name IS NULL;\n\n-- New indexes\nCREATE INDEX IF NOT EXISTS idx_msq_pimages_store\n    ON msq_product_images(business_id, sort_order, created_at DESC)\n    column_2 true column_3 'product';\n\nCREATE INDEX IF NOT EXISTS idx_msq_pimages_category\n    ON msq_product_images(business_id, category)\n    column_3 'product' column_2 true;\n\nCREATE UNIQUE INDEX IF NOT EXISTS idx_msq_pimages_canonical\n    ON msq_product_images(business_id, canonical_name)\n    WHERE canonical_name IS NOT NULL;\n\nCREATE INDEX IF NOT EXISTS idx_msq_pimages_fts\n    ON msq_product_images\n    USING gin(to_tsvector('english', COALESCE(display_name, product_name, '')));\n\nCREATE INDEX IF NOT EXISTS idx_msq_pimages_type\n    ON msq_product_images(business_id, image_type);\n\n-- \u2500\u2500 msq_business_profiles: 2 new columns \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\nALTER TABLE msq_business_profiles\n    ADD COLUMN IF NOT EXISTS store_token text,\n    ADD COLUMN IF NOT EXISTS store_slug  text;\n\n-- Populate store_token for all rows (existing + any that are null)\nUPDATE table_3\ncolumn_4 encode(gen_random_bytes(12), 'hex')\nWHERE store_token IS NULL;\n\n-- Now enforce NOT NULL and UNIQUE\nALTER TABLE msq_business_profiles\n    ALTER COLUMN store_token SET NOT NULL,\n    ALTER COLUMN store_token SET DEFAULT encode(gen_random_bytes(12), 'hex');\n\n-- Add unique constraints only if they don't already exist\nDO $$\nBEGIN\n    IF NOT EXISTS (\n        SELECT 1 FROM table_4\n        column_5 '[ID]'\n    ) THEN\n        ALTER TABLE msq_business_profiles ADD CONSTRAINT msq_business_profiles_store_token_key UNIQUE (store_token);\n    END IF;\n    IF NOT EXISTS (\n        SELECT 1 FROM table_4\n        column_5 '[ID]'\n    ) THEN\n        ALTER TABLE msq_business_profiles ADD CONSTRAINT msq_business_profiles_store_slug_key UNIQUE (store_slug);\n    END IF;\nEND;\n$$;\n\n-- New indexes\nCREATE INDEX IF NOT EXISTS idx_msq_biz_slug\n    ON msq_business_profiles(store_slug) WHERE store_slug IS NOT NULL;\n\nCREATE INDEX IF NOT EXISTS idx_msq_biz_token\n    ON msq_business_profiles(store_token);\n\n-- \u2500\u2500 New function: canonical name generator \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\nCREATE OR REPLACE FUNCTION msq_generate_canonical_name(\n    p_business_id uuid,\n    p_category    text\n)\nRETURNS text AS $$\nDECLARE\n    v_biz_slug   text;\n    v_cat_slug   text;\n    v_seq        int;\n    v_candidate  text;\n    v_exists     boolean;\nBEGIN\n    SELECT LOWER(REGEXP_REPLACE(SUBSTRING(business_name, 1, 8), '[^a-z0-9]', '', 'g'))\n    INTO table_5\n    FROM table_3\n    column_6 p_business_id;\n\n    IF v_biz_slug IS NULL OR LENGTH(v_biz_slug) < 3 THEN\n        v_biz_slug := LEFT(p_business_id::text, 8);\n    END IF;\n\n    v_cat_slug := LOWER(REGEXP_REPLACE(SUBSTRING(COALESCE(p_category, 'item'), 1, 6), '[^a-z0-9]', '', 'g'));\n    IF v_cat_slug IS NULL OR LENGTH(v_cat_slug) < 2 THEN\n        v_cat_slug := 'item';\n    END IF;\n\n    SELECT COALESCE(MAX(\n        NULLIF(REGEXP_REPLACE(\n            SPLIT_PART(canonical_name, '-', 3), '[^0-9]', '', 'g'\n        ), '')::int\n    ), 0) + 1\n    INTO table_6\n    FROM table_2\n    column_7 p_business_id\n      AND canonical_name LIKE v_biz_slug || '-' || v_cat_slug || '-%';\n\n    LOOP\n        v_candidate := v_biz_slug || '-' || v_cat_slug || '-' || LPAD(v_seq::text, 3, '0');\n        SELECT EXISTS(\n            SELECT 1 FROM table_2\n            column_7 p_business_id column_8 v_candidate\n        ) INTO table_7;\n        EXIT WHEN NOT v_exists;\n        v_seq := v_seq + 1;\n    END LOOP;\n\n    RETURN v_candidate;\nEND;\n$$ LANGUAGE plpgsql VOLATILE;\n\n-- \u2500\u2500 Backfill canonical_name for existing product images \u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\nDO $$\nDECLARE\n    r RECORD;\nBEGIN\n    FOR r IN\n        SELECT id, business_id, category\n        FROM table_2\n        WHERE canonical_name IS NULL\n        ORDER BY business_id, created_at\n    LOOP\n        UPDATE table_2\n        column_8 msq_generate_canonical_name(\n            r.business_id,\n            COALESCE(r.category, 'item')\n        )\n        column_6 r.id;\n    END LOOP;\nEND;\n$$;\n\n-- \u2500\u2500 Update table_8 view: DROP first, then recreate \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n-- CREATE OR REPLACE VIEW cannot add new columns in PostgreSQL\n-- Must drop and recreate when adding columns to the view\n\nDROP VIEW IF EXISTS msq_tenant_context;\n\nCREATE VIEW msq_tenant_context AS\nSELECT\n    t.id                    AS tenant_id,\n    b.id                    AS business_id,\n    t.telegram_id,\n    t.whatsapp_no,\n    t.phone_no,\n    t.full_name,\n    t.preferred_name,\n    t.username,\n    t.email,\n    t.last_language_style,\n    b.business_name,\n    b.business_type,\n    b.business_mode,\n    b.description           AS business_description,\n    b.location              AS business_location,\n    b.operating_hours,\n    b.operating_days,\n    b.how_customers_reach,\n    b.delivery_zones,\n    b.catalogue_summary,\n    b.logo_url,\n    b.social_handles,\n    b.store_token,\n    b.store_slug,\n    c.agent_name,\n    c.tone_profile,\n    c.agent_rules,\n    c.active_capabilities,\n    c.reply_language,\n    c.voice_enabled,\n    cr.balance              AS credit_balance,\n    cr.plan                 AS credit_plan,\n    pi_tg.access_token      AS bot_token,\n    pi_tg.bot_username,\n    pi_wa.access_token      AS wa_instance,\n    pi_wa.phone_number_id   AS wa_number\nFROM table_9 t\nLEFT JOIN table_3     b     ON b.tenant_id    = t.id\nLEFT JOIN table_10          c     ON c.business_id  = b.id\nLEFT JOIN table_11               cr    ON cr.tenant_id   = t.id\nLEFT JOIN table_12 pi_tg ON pi_tg.business_id = b.id\n                                         AND pi_tg.platform    = 'telegram'\nLEFT JOIN table_12 pi_wa ON pi_wa.business_id = b.id\n                                         AND pi_wa.platform    = 'whatsapp';\n\n-- ============================================================\n-- DONE \u2014 Migration v10.0 \u2192 v11.0 complete\n-- ============================================================",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        784,
+        -976
+      ],
+      "id": "__NODE_2__",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "google_auth_feedback",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        16,
+        -416
+      ],
+      "id": "__NODE_3__",
+      "name": "Google OAuth Callback",
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || {};\n\nconst status            = body.status || 'unknown';\nconst tenantId          = body.tenant_id || '';\nconst messagingChannel  = body.messaging_channel || 'telegram';\n\nif (!tenantId) throw new Error('No tenant_id in OAuth callback body');\n\nreturn [{\n  json: {\n    tenant_id:         tenantId,\n    messaging_channel: messagingChannel,\n    status:            status,\n    is_success:        status === 'success'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        -416
+      ],
+      "id": "__NODE_4__",
+      "name": "Parse OAuth Callback"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "success-check",
+              "leftValue": "={{ $json.is_success }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        400,
+        -416
+      ],
+      "id": "__NODE_5__",
+      "name": "OAuth Succeeded?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  t.telegram_id,\n  t.whatsapp_no,\n  pi.access_token  AS bot_token,\n  a.meta->>'pending_query'      AS pending_query,\n  a.meta->>'messaging_channel'  AS pending_channel\nFROM table_9 t\nJOIN table_12 pi\n  ON pi.tenant_id = t.id AND pi.platform = 'telegram'\nLEFT JOIN table_13 a\n  ON a.tenant_id = t.id AND a.platform = 'google'\nWHERE t.id = $1::uuid",
+        "options": {
+          "queryReplacement": "={{ [$json.tenant_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        592,
+        -528
+      ],
+      "id": "__NODE_6__",
+      "name": "Fetch Owner and Pending Query",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE table_13\ncolumn_9 meta - 'pending_query' - 'messaging_channel',\n    updated_at = now()\ncolumn_10 $1::uuid\n  column_11 'google'",
+        "options": {
+          "queryReplacement": "={{ [$('Parse OAuth Callback').first().json.tenant_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        784,
+        -528
+      ],
+      "id": "__NODE_7__",
+      "name": "Clear Pending Query",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "pq-check",
+              "leftValue": "={{ $('Fetch Owner and Pending Query').first().json.pending_query }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        976,
+        -528
+      ],
+      "id": "__NODE_8__",
+      "name": "Has Pending Request?"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "ZMsRfxp9daKXKZh0SdLKC",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/ZMsRfxp9daKXKZh0SdLKC",
+          "cachedResultName": "Google Sub Workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "query": "={{ $('Fetch Owner and Pending Query').first().json.pending_query }}",
+            "tenant_id": "={{ $('Parse OAuth Callback').first().json.tenant_id }}",
+            "messaging_channel": "={{ $('Fetch Owner and Pending Query').first().json.pending_channel || 'telegram' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "query",
+              "displayName": "query",
+              "type": "string",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "type": "string",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "messaging_channel",
+              "displayName": "messaging_channel",
+              "type": "string",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1168,
+        -640
+      ],
+      "id": "__NODE_9__",
+      "name": "Re-run Original Google Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $('Fetch Owner and Pending Query').first().json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $('Fetch Owner and Pending Query').first().json.telegram_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ '\u2705 Google account connected!\\n\\n' + ($('Re-run Original Google Request').first().json.output || 'Your request is ready.') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1360,
+        -640
+      ],
+      "id": "__NODE_10__",
+      "name": "Send Connected + Result",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $('Fetch Owner and Pending Query').first().json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $('Fetch Owner and Pending Query').first().json.telegram_id }}"
+            },
+            {
+              "name": "text",
+              "value": "\u2705 Your Google account is now connected! You can now use Gmail and Calendar \u2014 just ask me."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1168,
+        -416
+      ],
+      "id": "__NODE_11__",
+      "name": "Send Google Connected",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT t.telegram_id, pi.access_token AS bot_token\nFROM table_9 t\nJOIN table_12 pi\n  ON pi.tenant_id = t.id AND pi.platform = 'telegram'\nWHERE t.id = $1::uuid",
+        "options": {
+          "queryReplacement": "={{ [$json.tenant_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        592,
+        -288
+      ],
+      "id": "__NODE_12__",
+      "name": "Fetch Owner for Error",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.telegram_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Parse OAuth Callback').first().json.status === 'access_denied' ? '\u274c Google connection was cancelled. No problem \u2014 just ask me again whenever you want to connect.' : '\u274c Google connection failed. Please try again or contact support.' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        784,
+        -288
+      ],
+      "id": "__NODE_13__",
+      "name": "Send Auth Failed Message",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "## Google OAuth Completion Handler\n\n**Triggered by:** OAuth server POST after user authorizes\n**Payload:** { tenant_id, messaging_channel, status }\n\n**Success flow:**\n1. Fetch owner's platform data + any pending query\n2. Clear the pending query from table_13\n3. If pending query \u2192 replay via Google subworkflow \u2192 send result\n4. If no pending query \u2192 send plain success message\n\n**Failure flow:**\nFetch owner \u2192 send appropriate error message",
+        "height": 724,
+        "width": 1576,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -32,
+        -768
+      ],
+      "typeVersion": 1,
+      "id": "__NODE_14__",
+      "name": "Workflow Overview"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=[URL]",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $json.tenant_id }}"
+            },
+            {
+              "name": "messaging_channel",
+              "value": "={{ $json.messaging_channel }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        208,
+        256
+      ],
+      "id": "__NODE_15__",
+      "name": "Check Google Auth Status"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "needs_authorization",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "REDACTED_OPAQUE_TOKEN",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "success",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        400,
+        256
+      ],
+      "id": "__NODE_16__",
+      "name": "Google Connected?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_13 (tenant_id, platform, meta, is_active, connected_at, updated_at)\nVALUES ($1::uuid, 'google',\n  jsonb_build_object(\n    'pending_query',       $2::text,\n    'messaging_channel',   $3::text\n  ),\n  false, now(), now()\n)\nON CONFLICT (tenant_id, platform)\nDO UPDATE column_9 jsonb_set(\n                 jsonb_set(COALESCE(msq_auth.meta, '{}'), '{pending_query}',      to_jsonb($2::text)),\n                 '{messaging_channel}', to_jsonb($3::text)\n               ),\n  updated_at = now()",
+        "options": {
+          "queryReplacement": "={{ [$('When Executed by Another Workflow').first().json.tenant_id, $('When Executed by Another Workflow').first().json.query, $('When Executed by Another Workflow').first().json.messaging_channel || 'telegram'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        592,
+        64
+      ],
+      "id": "__NODE_17__",
+      "name": "Save Pending Query",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const authData = $('Check Google Auth Status').first().json;\nconst trigger = $('When Executed by Another Workflow').first().json;\n\nconst authUrl = authData.authorization_url ||\n  '[URL]' + encodeURIComponent(trigger.tenant_id);\n\nreturn [{\n  json: {\n    output: '\ud83d\udd10 To use Gmail and Google Calendar, you need to connect your Google account first.\\n\\n' +\n            'Tap the link below to authorize \u2014 it only takes a minute:\\n' + authUrl +\n            '\\n\\n\u2705 Once connected, I\\'ll automatically complete what you asked.',\n    needs_auth: true,\n    tenant_id: trigger.tenant_id,\n    messaging_channel: trigger.messaging_channel || 'telegram'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2256,
+        -176
+      ],
+      "id": "__NODE_18__",
+      "name": "Build Auth URL Response"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "text",
+              "value": "={{ $('When Executed by Another Workflow').item.json.query }}",
+              "type": "string"
+            },
+            {
+              "id": "__ASSIGN_1__",
+              "name": "access_token",
+              "value": "REDACTED",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "tenant_id",
+              "value": "={{ $('When Executed by Another Workflow').item.json.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "messaging_channel",
+              "value": "={{ $('When Executed by Another Workflow').item.json.messaging_channel || 'telegram' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        592,
+        256
+      ],
+      "id": "__NODE_19__",
+      "name": "Prepare Agent Context"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "options": {
+          "systemMessage": "=You are an intelligent Google Workspace assistant for MySquad business owners. Help them manage Gmail and Google Calendar through natural conversation.\n\nToday's date: {{ $today }}\nTimezone: Africa/Lagos (WAT = UTC+1)\n\n## Core Rules\n\n1. **Tools only** \u2014 never simulate or describe actions without executing them\n2. **Never guess IDs** \u2014 always fetch eventId/messageId first with list/search tools\n3. **Confirm before** sending emails or deleting events\n4. **ISO-8601 dates** \u2014 always YYYY-MM-DDTHH:mm:ss+01:00 for Lagos time\n5. **Ask when unclear** \u2014 don't guess missing info\n\n## Date Calculation\n- Calculate relative dates from {{ $today }}\n- \"tomorrow 2pm\" \u2192 [date+1]T14:00:00+01:00\n- Default meeting duration: 1 hour unless stated\n\n## Tool Workflow Patterns\n\n**Read emails:** gmail_search_emails \u2192 present subjects + snippets \u2192 gmail_get_email if full content needed\n\n**Send email:** confirm subject + body \u2192 \"I'll send to X with subject Y \u2014 confirm?\" \u2192 gmail_send_email\n\n**Draft email:** gmail_draft_email (does NOT send)\n\n**Create event:** collect title + start + end \u2192 create_calendar_event\n\n**Update/delete event:** get_calendar_events first to get eventId \u2192 then update/delete\n\n**Attendees format:** ALWAYS use JSON array: [{\"email\":\"[EMAIL]\"}]\n\n## Response Format\n- Use **bold** for key info (Markdown, not HTML \u2014 never use <b> tags)\n- Keep responses conversational and concise\n- Match owner's language style (English or Pidgin)\n- Never expose access_token or IDs to the user unless asked\n\n## Error Handling\n- Missing field \u2192 ask the user, never guess\n- Tool failure \u2192 explain simply, suggest next step"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        720,
+        256
+      ],
+      "id": "__NODE_20__",
+      "name": "Google Workspace Agent"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        672,
+        448
+      ],
+      "id": "__NODE_21__",
+      "name": "Groq LLM",
+      "credentials": {
+        "groqApi": {
+          "id": "__GROQ_CRED_ID",
+          "name": "Groq API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=google_{{ $('When Executed by Another Workflow').item.json.tenant_id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        816,
+        448
+      ],
+      "id": "__NODE_22__",
+      "name": "Google Session Memory"
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOutput = $('Google Workspace Agent').first().json.output || '';\nconst trigger = $('When Executed by Another Workflow').first().json;\n\nreturn [{\n  json: {\n    output: agentOutput,\n    tenant_id: trigger.tenant_id,\n    messaging_channel: trigger.messaging_channel || 'telegram',\n    needs_auth: false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        256
+      ],
+      "id": "__NODE_23__",
+      "name": "Format Agent Response"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=List upcoming calendar events. Use FIRST before update/delete to get eventId.\n\nReturns: events with eventId, summary, start, end, description, attendees.",
+        "url": "[URL]",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "singleEvents",
+              "value": "true"
+            },
+            {
+              "name": "orderBy",
+              "value": "startTime"
+            },
+            {
+              "name": "maxResults",
+              "value": "25"
+            },
+            {
+              "name": "timeMin",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1024,
+        864
+      ],
+      "id": "__NODE_24__",
+      "name": "calendar_get_events"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Create a new Google Calendar event with optional Google Meet link.\n\nRequired:\n- title: event title\n- start: ISO-8601 with timezone e.g. 2026-04-21T14:00:00+01:00\n- end: ISO-8601 with timezone\n\nOptional:\n- description, location\n- attendees: JSON array [{\"email\":\"[EMAIL]\"}] \u2014 MUST be this exact format",
+        "method": "POST",
+        "url": "[URL]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "summary",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "description",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters1_Value', ``, 'string') }}"
+            },
+            {
+              "name": "location",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters2_Value', ``, 'string') }}"
+            },
+            {
+              "name": "start",
+              "value": "={{ { \"dateTime\": $fromAI('start', '', 'string') } }}"
+            },
+            {
+              "name": "end",
+              "value": "={{ { \"dateTime\": $fromAI('end', '', 'string') } }}"
+            },
+            {
+              "value": "={{ { \"createRequest\": { \"requestId\": $now.toString(), \"conferenceSolutionKey\": { \"type\": \"hangoutsMeet\" } } } }}"
+            },
+            {
+              "name": "attendees",
+              "value": "={{ JSON.parse($fromAI('attendees', '[]', 'string') || '[]') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1200,
+        864
+      ],
+      "id": "__NODE_25__",
+      "name": "calendar_create_event"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Update table_14 existing calendar event. REQUIRES eventId from table_15\n\nRequired:\n- eventId: from table_16\n- title, start (ISO-8601), end (ISO-8601)\n\nOptional:\n- description, location",
+        "method": "PUT",
+        "url": "=[URL]\"eventId\")}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "summary",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "description",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters1_Value', ``, 'string') }}"
+            },
+            {
+              "name": "start.dateTime",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters2_Value', ``, 'string') }}"
+            },
+            {
+              "name": "end.dateTime",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters3_Value', ``, 'string') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1376,
+        864
+      ],
+      "id": "__NODE_26__",
+      "name": "calendar_update_event"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Delete a calendar event. REQUIRES eventId from table_15 ALWAYS confirm with user first \u2014 irreversible.\n\nRequired:\n- eventId: from table_16",
+        "method": "DELETE",
+        "url": "=[URL]\"eventId\", \"\", \"string\")}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        2272,
+        48
+      ],
+      "id": "__NODE_27__",
+      "name": "calendar_delete_event",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Gmail Tools",
+        "height": 400,
+        "width": 928,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        960,
+        384
+      ],
+      "typeVersion": 1,
+      "id": "__NODE_28__",
+      "name": "Gmail Tools Label"
+    },
+    {
+      "parameters": {
+        "content": "## Calendar Tools",
+        "height": 240,
+        "width": 560,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        960,
+        800
+      ],
+      "typeVersion": 1,
+      "id": "__NODE_29__",
+      "name": "Calendar Tools Label"
+    },
+    {
+      "parameters": {
+        "content": "## Google Sub Workflow\n\n**Flow:**\n1. Check if owner has Google connected\n2a. NOT connected \u2192 Save pending query \u2192 Return auth URL\n2b. Connected \u2192 Run Google Workspace Agent\n3. Return response (both paths)\n\n**Pending query:** stored in msq_auth.meta\nso OAuth completion can replay the original request automatically.",
+        "height": 1100,
+        "width": 1572,
+        "color": "#14305C"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -32,
+        -32
+      ],
+      "typeVersion": 1,
+      "id": "__NODE_30__",
+      "name": "Workflow Overview1"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Create a new Gmail label.\n\nParameters:\n- name (string, required): Label name",
+        "method": "POST",
+        "url": "[URL]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "access_token",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1200,
+        624
+      ],
+      "id": "__NODE_31__",
+      "name": "gmail_create_label"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Mark email as unread. Requires message_id.",
+        "method": "POST",
+        "url": "[URL]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message_id",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "access_token",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1024,
+        624
+      ],
+      "id": "__NODE_32__",
+      "name": "gmail_mark_as_unread"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Search Gmail inbox using Gmail query syntax.\nExamples: 'from:[EMAIL]', 'subject:invoice', 'is:unread', 'has:attachment', 'after:2026/01/20'\n\nParameters:\n- query (string, required): Gmail search query\n- max_results (number, optional, default: 10)",
+        "method": "POST",
+        "url": "[URL]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "max_results",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters1_Value', `10`, 'string') }}"
+            },
+            {
+              "name": "access_token",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1024,
+        448
+      ],
+      "id": "__NODE_33__",
+      "name": "gmail_search_emails"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Get full email including body and thread. Requires message_id from table_17",
+        "method": "POST",
+        "url": "[URL]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message_id",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "access_token",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1200,
+        448
+      ],
+      "id": "__NODE_34__",
+      "name": "gmail_get_email"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Send a new email. CRITICAL: Always confirm with user before sending.\n\nParameters:\n- to (required), subject (required), body (required)\n- cc, bcc (optional)",
+        "method": "POST",
+        "url": "[URL]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "to",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "subject",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters1_Value', ``, 'string') }}"
+            },
+            {
+              "name": "body",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters2_Value', ``, 'string') }}"
+            },
+            {
+              "name": "cc",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters3_Value', ``, 'string') }}"
+            },
+            {
+              "name": "bcc",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters4_Value', ``, 'string') }}"
+            },
+            {
+              "name": "access_token",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1376,
+        448
+      ],
+      "id": "__NODE_35__",
+      "name": "gmail_send_email"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=List all user-created Gmail labels.",
+        "method": "POST",
+        "url": "[URL]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1376,
+        624
+      ],
+      "id": "__NODE_36__",
+      "name": "gmail_list_labels"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Add a label to an email. Label must exist first (use gmail_create_label if needed).\n\nParameters:\n- message_id (required), label_name (required): exact label name",
+        "method": "POST",
+        "url": "[URL]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message_id",
+              "value": "={{$fromAI('message_id', '', 'string')}}"
+            },
+            {
+              "name": "label_name",
+              "value": "={{$fromAI('label_name', '', 'string')}}"
+            },
+            {
+              "name": "access_token",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1552,
+        624
+      ],
+      "id": "__NODE_37__",
+      "name": "gmail_add_label"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Create email draft (does NOT send). Use when user says 'draft', 'prepare', 'write but don't send'.\n\nParameters:\n- to, subject, body (required)\n- cc, bcc, draft_id (optional)",
+        "method": "POST",
+        "url": "[URL]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "to",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "subject",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters1_Value', ``, 'string') }}"
+            },
+            {
+              "name": "body",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters2_Value', ``, 'string') }}"
+            },
+            {
+              "name": "cc",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters3_Value', ``, 'string') }}"
+            },
+            {
+              "name": "bcc",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters4_Value', ``, 'string') }}"
+            },
+            {
+              "name": "draft_id",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters5_Value', ``, 'string') }}"
+            },
+            {
+              "name": "access_token",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1552,
+        448
+      ],
+      "id": "__NODE_38__",
+      "name": "gmail_draft_email"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Mark email as read. Requires message_id.",
+        "method": "POST",
+        "url": "[URL]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message_id",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "access_token",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1728,
+        448
+      ],
+      "id": "__NODE_39__",
+      "name": "gmail_mark_as_read"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Remove a label from table_14 email.\n\nParameters:\n- message_id (required), label_name (required)",
+        "method": "POST",
+        "url": "[URL]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message_id",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "label_name",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters1_Value', ``, 'string') }}"
+            },
+            {
+              "name": "access_token",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1728,
+        624
+      ],
+      "id": "__NODE_40__",
+      "name": "gmail_remove_label"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "status",
+              "value": "={{ $('Google Connected?').item.json.status }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "message",
+              "value": "={{ $('Google Connected?').item.json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "name": "auth_url",
+              "value": "REDACTED",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        784,
+        64
+      ],
+      "id": "__NODE_41__",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_18\n  (tenant_id, action_type, credits_used, metadata, created_at)\nVALUES\n  ($1::uuid, 'output_google', 0, $2::jsonb, now())",
+        "options": {
+          "queryReplacement": "={{ [  $('When Executed by Another Workflow').first().json.tenant_id,  JSON.stringify({    type: 'google_action',    source: $('When Executed by Another Workflow').first().json.messaging_channel || 'telegram'  })] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        976,
+        64
+      ],
+      "id": "__NODE_42__",
+      "name": "Track Google Action",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Google OAuth Callback": "REDACTED",
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "query": "The title of the meeting is Let's go get it. I have no attendees",
+          "tenant_id": "REDACTED_OPAQUE_TOKEN",
+          "messaging_channel": "telegram"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Check Google Auth Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google OAuth Callback": {
+      "main": [
+        [
+          {
+            "node": "Parse OAuth Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse OAuth Callback": {
+      "main": [
+        [
+          {
+            "node": "OAuth Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OAuth Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Owner and Pending Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Owner for Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Owner and Pending Query": {
+      "main": [
+        [
+          {
+            "node": "Clear Pending Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Pending Query": {
+      "main": [
+        [
+          {
+            "node": "Has Pending Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Pending Request?": {
+      "main": [
+        [
+          {
+            "node": "Re-run Original Google Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Google Connected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-run Original Google Request": {
+      "main": [
+        [
+          {
+            "node": "Send Connected + Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Owner for Error": {
+      "main": [
+        [
+          {
+            "node": "Send Auth Failed Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Google Auth Status": {
+      "main": [
+        [
+          {
+            "node": "Google Connected?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Connected?": {
+      "main": [
+        [
+          {
+            "node": "Save Pending Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Agent Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Pending Query": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Auth URL Response": {
+      "main": [
+        []
+      ]
+    },
+    "Prepare Agent Context": {
+      "main": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Workspace Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Agent Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Track Google Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Agent Response": {
+      "main": [
+        []
+      ]
+    },
+    "Groq LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Session Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calendar_get_events": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calendar_create_event": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calendar_update_event": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calendar_delete_event": {
+      "ai_tool": [
+        []
+      ]
+    },
+    "gmail_create_label": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gmail_mark_as_unread": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gmail_search_emails": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gmail_get_email": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gmail_send_email": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gmail_list_labels": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gmail_add_label": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gmail_draft_email": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gmail_mark_as_read": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gmail_remove_label": {
+      "ai_tool": [
+        [
+          {
+            "node": "Google Workspace Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "__VERSION_ID__",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "__INSTANCE_ID__"
+  },
+  "id": "__WORKFLOW_ID__",
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.874297+00:00",
+    "original_name": "Google Sub Workflow",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "existing": "table_1",
+      "msq_product_images": "table_2",
+      "msq_business_profiles": "table_3",
+      "pg_constraint": "table_4",
+      "v_biz_slug": "table_5",
+      "v_seq": "table_6",
+      "v_exists": "table_7",
+      "the": "table_8",
+      "msq_tenants": "table_9",
+      "msq_agent_config": "table_10",
+      "msq_credits": "table_11",
+      "msq_platform_integrations": "table_12",
+      "msq_auth": "table_13",
+      "an": "table_14",
+      "calendar_get_events.": "table_15",
+      "calendar_get_events": "table_16",
+      "gmail_search_emails.": "table_17",
+      "msq_credit_transactions": "table_18"
+    },
+    "columns_renamed": {
+      "display_name": "column_1",
+      "show_on_store": "column_2",
+      "image_type": "column_3",
+      "store_token": "column_4",
+      "conname": "column_5",
+      "id": "column_6",
+      "business_id": "column_7",
+      "canonical_name": "column_8",
+      "meta": "column_9",
+      "tenant_id": "column_10",
+      "platform": "column_11"
+    }
+  }
+}

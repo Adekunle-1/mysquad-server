@@ -1,0 +1,173 @@
+{
+  "updatedAt": "2026-05-31T08:42:34.910Z",
+  "createdAt": "2026-05-30T09:22:22.766Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Vision Analyse",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vision-analyse",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "__NODE_1__",
+      "name": "Vision Analyse Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        416,
+        928
+      ],
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"meta-llama/llama-4-scout-17b-16e-instruct\",\n  \"max_tokens\": 200,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": \"data:{{ $json.body.mime_type }};base64,{{ $json.body.image_b64 }}\"\n          }\n        },\n        {\n          \"type\": \"text\",\n          \"text\": \"You are a product naming assistant for Nigerian small businesses. Look at this image and respond ONLY with a valid JSON object \u2014 no markdown, no explanation:\\n{\\n  \\\"suggested_name\\\": \\\"short human-readable product name e.g. Red Ankara Gown, Chocolate Fudge Cake, Brown Suede Sandals\\\",\\n  \\\"suggested_category\\\": \\\"single lowercase word e.g. dress, cake, shoes, bag, jewellery, fabric, food\\\",\\n  \\\"is_logo\\\": false\\n}\\nIf the image appears to be a logo or brand mark rather than a product, set is_logo to true and leave the other fields as empty strings.\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "__NODE_2__",
+      "name": "Call Groq Vision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        656,
+        928
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\nlet suggested_name = '';\nlet suggested_category = '';\nlet is_logo = false;\n\ntry {\n  const raw = body.choices?.[0]?.message?.content || '{}';\n  const clean = raw.replace(/```json|```/g, '').trim();\n  const parsed = JSON.parse(clean);\n  suggested_name     = parsed.suggested_name     || '';\n  suggested_category = parsed.suggested_category || '';\n  is_logo            = parsed.is_logo            || false;\n} catch(e) {\n  // vision failed gracefully \u2014 return empty so form falls back to manual entry\n}\n\nreturn { json: { suggested_name, suggested_category, is_logo } };"
+      },
+      "id": "__NODE_3__",
+      "name": "Parse Vision Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        928
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "__NODE_4__",
+      "name": "Respond to Form",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1136,
+        928
+      ]
+    }
+  ],
+  "connections": {
+    "Vision Analyse Webhook": {
+      "main": [
+        [
+          {
+            "node": "Call Groq Vision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Groq Vision": {
+      "main": [
+        [
+          {
+            "node": "Parse Vision Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Vision Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "070097cd-a672-4bea-81a8-3de7c811878a",
+  "versionCounter": 12,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-05-30T09:22:22.766Z",
+      "createdAt": "2026-05-30T09:22:22.766Z",
+      "role": "workflow:owner",
+      "workflowId": "cUbFkN5dzBeDws0l",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 070097cd",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:22.061616+00:00",
+    "original_name": "MySquad Vision Analyse",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {},
+    "columns_renamed": {}
+  }
+}

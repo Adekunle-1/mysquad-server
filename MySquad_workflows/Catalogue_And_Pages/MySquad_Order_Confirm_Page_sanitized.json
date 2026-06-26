@@ -1,0 +1,658 @@
+{
+  "updatedAt": "2026-05-31T08:48:46.240Z",
+  "createdAt": "2026-04-27T19:07:58.432Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Order Confirm Page",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "order-confirm-page",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        784,
+        352
+      ],
+      "id": "__NODE_1__",
+      "name": "Webhook (GET)",
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "order-confirm-submit",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        784,
+        1040
+      ],
+      "id": "__NODE_2__",
+      "name": "Webhook (POST)",
+      "webhookId": "__WEBHOOK_2__"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT co.order_number, co.items, co.total_amount, co.delivery_type,\n  co.delivery_address, co.customer_notes, co.confirm_token,\n  co.token_expires_at, co.status,\n  co.appointment_datetime,\n  co.appointment_location,\n  b.business_name\nFROM table_1 co\nJOIN table_2 b ON b.id = co.business_id\nWHERE co.confirm_token = $1\n  AND co.token_expires_at > now()\n  AND co.status IN ('enquiry', 'placed', 'pending')",
+        "options": {
+          "queryReplacement": "={{ [$json.query.token] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        992,
+        352
+      ],
+      "id": "__NODE_3__",
+      "name": "Fetch Order by Token",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "check-order-001",
+              "leftValue": "={{ $json.order_number }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1200,
+        352
+      ],
+      "id": "__NODE_4__",
+      "name": "Token Valid?"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ (function() {\n  const order = $('Fetch Order by Token').first().json;\n  let items = [];\n  try { items = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []); } catch(e) {}\n  const token = $('Webhook (GET)').first().json.query.token;\n\n  // \u2500\u2500 Service vs product framing \u2500\u2500\n  const isBooking = order.delivery_type === 'appointment';\n  const pageTitle     = isBooking ? 'Confirm Booking'          : 'Confirm Order';\n  const sectionLabel  = isBooking ? 'Booking Summary'          : 'Order Summary';\n  const submitLabel   = isBooking ? 'Confirm & Notify Customer': 'Confirm & Notify Customer';\n  const successMsg    = isBooking\n    ? 'Booking confirmed. Customer has been notified.'\n    : 'Order confirmed. Customer has been notified with your payment details.';\n  const warningMsg    = isBooking\n    ? '\u26a0\ufe0f Confirm your password to confirm this booking. The customer will be notified immediately.'\n    : '\u26a0\ufe0f Enter the bank account you want to receive payment to, then confirm with your MySquad password. The customer will receive these details immediately.';\n  const showPayment   = !isBooking;\n\n  // \u2500\u2500 Appointment details (service bookings) \u2500\u2500\n  let appointmentHtml = '';\n  if (isBooking && order.appointment_datetime) {\n    try {\n      const dt = new Date(order.appointment_datetime);\n      const formatted = dt.toLocaleString('en-NG', {\n        timeZone: 'Africa/Lagos',\n        weekday: 'short', month: 'short', day: 'numeric',\n        hour: '2-digit', minute: '2-digit'\n      });\n      appointmentHtml = '<li style=\"color:#F13A01;font-weight:600\">\ud83d\udcc5 ' + formatted + '</li>';\n      if (order.appointment_location) {\n        appointmentHtml += '<li>\ud83d\udccd ' + order.appointment_location + '</li>';\n      }\n    } catch(e) {}\n  }\n\n  // \u2500\u2500 Items list \u2500\u2500\n  const itemsHtml = items.map(i =>\n    '<li>' + (i.quantity||1) + 'x ' + i.name +\n    (i.unit_price ? ' \u2014 \u20a6' + Number(i.unit_price).toLocaleString() : '') +\n    '</li>'\n  ).join('');\n\n  // \u2500\u2500 Payment fields HTML (only for product orders) \u2500\u2500\n  const paymentFieldsHtml = showPayment ? `\n    <label>Bank Name</label>\n    <input type=\"text\" id=\"bankName\" placeholder=\"e.g. GTBank\" autocomplete=\"off\" autocorrect=\"off\">\n    <label>Account Number</label>\n    <input type=\"text\" id=\"acctNo\" placeholder=\"10-digit NUBAN\" maxlength=\"11\" inputmode=\"numeric\" autocomplete=\"off\" oninput=\"this.value=this.value.replace(/\\\\D/g,'').slice(0,10)\">\n    <label>Account Name</label>\n    <input type=\"text\" id=\"acctName\" placeholder=\"As it appears on your account\" autocomplete=\"off\" autocorrect=\"off\">\n  ` : '';\n\n  return `<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>${pageTitle} \u2014 ${order.order_number}</title>\n<style>\n:root {\n  --accent: #F13A01;\n  --accent-dark: #C42D00;\n  --accent-pale: #FFF5F2;\n  --text: #111;\n  --text-muted: #666;\n  --border: #e0e0e0;\n  --bg: #F5F4F2;\n  --surface: #fff;\n  --radius: 16px;\n  --radius-sm: 10px;\n  --radius-xs: 8px;\n}\n* { box-sizing: border-box; margin: 0; padding: 0; }\nbody {\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;\n  background: var(--bg);\n  min-height: 100vh;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 16px;\n}\n.card {\n  background: var(--surface);\n  border-radius: var(--radius);\n  padding: 32px 24px;\n  max-width: 420px;\n  width: 100%;\n  box-shadow: 0 4px 24px rgba(0,0,0,0.08);\n}\n.logo-bar {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  margin-bottom: 20px;\n}\n.logo-dot {\n  width: 10px; height: 10px;\n  border-radius: 50%;\n  background: var(--accent);\n  flex-shrink: 0;\n}\n.biz-name {\n  font-size: 13px;\n  font-weight: 600;\n  color: var(--text-muted);\n  letter-spacing: 0.2px;\n}\nh1 {\n  font-size: 22px;\n  font-weight: 800;\n  color: var(--text);\n  margin-bottom: 4px;\n  line-height: 1.2;\n}\n.order-ref {\n  font-size: 13px;\n  color: var(--accent);\n  font-weight: 700;\n  margin-bottom: 22px;\n  letter-spacing: 0.5px;\n}\n.section-title {\n  font-size: 11px;\n  font-weight: 700;\n  text-transform: uppercase;\n  color: var(--accent);\n  letter-spacing: 0.8px;\n  margin-bottom: 8px;\n}\n.summary-box {\n  background: var(--accent-pale);\n  border: 1px solid rgba(241,58,1,.12);\n  border-radius: var(--radius-sm);\n  padding: 14px 16px;\n  margin-bottom: 22px;\n}\n.summary-box ul { list-style: none; }\n.summary-box li {\n  font-size: 14px;\n  color: #333;\n  padding: 4px 0;\n  border-bottom: 1px solid rgba(241,58,1,.08);\n}\n.summary-box li:last-child { border-bottom: none; }\n.total {\n  font-size: 16px;\n  font-weight: 800;\n  color: var(--text);\n  margin-top: 10px;\n  padding-top: 10px;\n  border-top: 1.5px solid rgba(241,58,1,.15);\n}\n.warning {\n  background: #fff8e1;\n  border-left: 3px solid #f59e0b;\n  border-radius: var(--radius-xs);\n  padding: 12px 14px;\n  font-size: 13px;\n  color: #7a5c00;\n  margin-bottom: 22px;\n  line-height: 1.6;\n}\nlabel {\n  display: block;\n  font-size: 13px;\n  font-weight: 600;\n  color: #444;\n  margin-bottom: 6px;\n}\ninput {\n  width: 100%;\n  padding: 12px 14px;\n  border: 1.5px solid var(--border);\n  border-radius: var(--radius-sm);\n  font-size: 15px;\n  color: var(--text);\n  outline: none;\n  transition: border-color 0.18s, box-shadow 0.18s;\n  margin-bottom: 16px;\n  background: #fafaf8;\n  -webkit-appearance: none;\n  font-family: inherit;\n}\ninput:focus {\n  border-color: var(--accent);\n  box-shadow: 0 0 0 3px rgba(241,58,1,.10);\n  background: #fff;\n}\ninput[type=password] { letter-spacing: 2px; }\n.divider { border: none; border-top: 1px solid #eee; margin: 20px 0; }\n.error-msg {\n  color: #c00;\n  font-size: 13px;\n  margin-top: -10px;\n  margin-bottom: 14px;\n  display: none;\n  align-items: center;\n  gap: 6px;\n}\n.error-msg.show { display: flex; }\nbutton {\n  width: 100%;\n  padding: 15px;\n  background: var(--accent);\n  color: #fff;\n  font-size: 16px;\n  font-weight: 700;\n  border: none;\n  border-radius: var(--radius-sm);\n  cursor: pointer;\n  transition: background 0.18s, box-shadow 0.18s, transform 0.1s;\n  font-family: inherit;\n  box-shadow: 0 2px 12px rgba(241,58,1,.3);\n}\nbutton:hover { background: var(--accent-dark); box-shadow: 0 4px 16px rgba(241,58,1,.4); transform: translateY(-1px); }\nbutton:active { transform: translateY(0); }\nbutton:disabled { background: #aaa; cursor: not-allowed; box-shadow: none; transform: none; }\n.success-area {\n  text-align: center;\n  display: none;\n  padding: 20px 0 8px;\n}\n.success-icon { font-size: 52px; margin-bottom: 16px; }\n.success-title { font-size: 22px; font-weight: 800; color: var(--text); margin-bottom: 10px; }\n.success-sub { color: var(--text-muted); font-size: 15px; line-height: 1.6; }\n@media (max-width: 480px) {\n  .card { padding: 24px 18px; }\n  h1 { font-size: 20px; }\n}\n</style>\n</head>\n<body>\n<div class=\"card\">\n\n  <div class=\"logo-bar\">\n    <div class=\"logo-dot\"></div>\n    <div class=\"biz-name\">${order.business_name}</div>\n  </div>\n\n  <h1>${pageTitle}</h1>\n  <div class=\"order-ref\">${order.order_number}</div>\n\n  <div class=\"section-title\">${sectionLabel}</div>\n  <div class=\"summary-box\">\n    <ul>\n      ${appointmentHtml}\n      ${itemsHtml || '<li>No items found</li>'}\n    </ul>\n    <div class=\"total\">Total: \u20a6${Number(order.total_amount).toLocaleString()}</div>\n  </div>\n\n  <div class=\"warning\">${warningMsg}</div>\n\n  <div id=\"formArea\">\n    ${paymentFieldsHtml}\n\n    <label>Your Password</label>\n    <input type=\"password\" id=\"password\" placeholder=\"Enter your MySquad password\" autocomplete=\"current-password\">\n\n    <div class=\"error-msg\" id=\"errorMsg\">\u26a0 <span id=\"errorText\"></span></div>\n\n    <button id=\"submitBtn\" onclick=\"submitForm()\">${submitLabel}</button>\n  </div>\n\n  <div class=\"success-area\" id=\"successArea\">\n    <div class=\"success-icon\">\u2705</div>\n    <div class=\"success-title\">Done!</div>\n    <p class=\"success-sub\">${successMsg}</p>\n  </div>\n\n</div>\n<script>\nvar IS_BOOKING = ${isBooking ? 'true' : 'false'};\n\nasync function submitForm() {\n  var btn = document.getElementById('submitBtn');\n  var errWrap = document.getElementById('errorMsg');\n  var errText = document.getElementById('errorText');\n  errWrap.classList.remove('show');\n\n  var password = document.getElementById('password').value;\n  var bankName = '', acctNoClean = '', acctName = '';\n\n  if (!IS_BOOKING) {\n    bankName    = document.getElementById('bankName').value.trim();\n    var acctNoRaw = document.getElementById('acctNo').value;\n    acctNoClean = acctNoRaw.replace(/\\\\D/g, '');\n    acctName    = document.getElementById('acctName').value.trim();\n\n    if (!bankName || !acctNoClean || !acctName || !password) {\n      errText.textContent = 'Please fill in all fields.';\n      errWrap.classList.add('show');\n      return;\n    }\n    if (acctNoClean.length !== 10) {\n      errText.textContent = 'Account number must be exactly 10 digits.';\n      errWrap.classList.add('show');\n      return;\n    }\n  } else {\n    if (!password) {\n      errText.textContent = 'Please enter your password to confirm.';\n      errWrap.classList.add('show');\n      return;\n    }\n  }\n\n  btn.disabled = true;\n  btn.textContent = 'Confirming...';\n\n  try {\n    var res = await fetch('/webhook/order-confirm-submit', {\n      method: 'POST',\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({\n        token: '${token}',\n        bankName: bankName,\n        acctNo: acctNoClean,\n        acctName: acctName,\n        password: password\n      })\n    });\n    var data = await res.json();\n\n    if (data.success) {\n      document.getElementById('formArea').style.display = 'none';\n      document.getElementById('successArea').style.display = 'block';\n    } else {\n      errText.textContent = data.message || 'Something went wrong. Please try again.';\n      errWrap.classList.add('show');\n      btn.disabled = false;\n      btn.textContent = '${submitLabel}';\n    }\n  } catch(e) {\n    errText.textContent = 'Network error. Please try again.';\n    errWrap.classList.add('show');\n    btn.disabled = false;\n    btn.textContent = '${submitLabel}';\n  }\n}\n</script>\n</body>\n</html>`;\n})() }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1408,
+        240
+      ],
+      "id": "__NODE_5__",
+      "name": "Respond with HTML Form"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Link Expired</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f5f5f5;padding:16px}.card{background:#fff;border-radius:16px;padding:32px 24px;text-align:center;max-width:340px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,0.08)}h2{color:#c00;margin-bottom:12px;font-size:20px}p{color:#666;font-size:14px;line-height:1.6}</style></head><body><div class=\"card\"><h2>\u26a0\ufe0f Link Expired</h2><p>This confirmation link has expired or has already been used.<br><br>Go back to your chat and tap <b>Confirm &amp; Pay</b> again on the order notification to get a fresh link.</p></div></body></html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1408,
+        464
+      ],
+      "id": "__NODE_6__",
+      "name": "Respond with Error Page"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  co.id, co.order_number, co.tenant_id, co.customer_chat_id,\n  co.token_expires_at, co.total_amount, co.items,\n  t.password_hash,\n  pi.access_token AS bot_token\nFROM table_1 co\nJOIN table_3 t ON t.id = co.tenant_id\nJOIN table_4 pi ON pi.business_id = co.business_id AND pi.platform = 'telegram'\nWHERE co.confirm_token = $1\n  AND co.token_expires_at > now()\n  AND co.status IN ('enquiry', 'placed', 'pending')",
+        "options": {
+          "queryReplacement": "={{ [$json.body.token] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        992,
+        1040
+      ],
+      "id": "__NODE_7__",
+      "name": "Validate Token + Fetch Order",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "check-token-002",
+              "leftValue": "={{ $json.order_number }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1200,
+        1040
+      ],
+      "id": "__NODE_8__",
+      "name": "Token Valid?2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": false, \"message\": \"This link has expired or has already been used.\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1408,
+        1152
+      ],
+      "id": "__NODE_9__",
+      "name": "Respond: Token Expired"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  CASE\n    WHEN split_part(password_hash, ':', 1) = 'sha256' THEN\n      password_hash = 'sha256:' ||\n        split_part(password_hash, ':', 2) || ':' ||\n        encode(sha256(convert_to(\n          split_part(password_hash, ':', 2) || $1,\n          'UTF8'\n        )), 'hex')\n    ELSE false\n  END AS password_ok\nFROM table_3\ncolumn_1 $2::uuid",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook (POST)').first().json.body.password, $('Validate Token + Fetch Order').first().json.tenant_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1408,
+        928
+      ],
+      "id": "__NODE_10__",
+      "name": "Validate Password",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "check-pw-001",
+              "leftValue": "={{ $json.password_ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1616,
+        928
+      ],
+      "id": "__NODE_11__",
+      "name": "Password Correct?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": false, \"message\": \"Incorrect password. Please try again.\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1824,
+        1040
+      ],
+      "id": "__NODE_12__",
+      "name": "Respond: Wrong Password"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE table_1\ncolumn_2 'confirmed',\n    payment_bank_name = $3,\n    payment_acct_no   = $4,\n    payment_acct_name = $5,\n    confirm_token     = NULL,\n    token_expires_at  = NULL,\n    updated_at        = now()\ncolumn_1 $1::uuid\n  column_3 $2::uuid\nRETURNING id, order_number, customer_chat_id, total_amount,\n          payment_bank_name, payment_acct_no, payment_acct_name",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Validate Token + Fetch Order').first().json.id,\n  $('Validate Token + Fetch Order').first().json.tenant_id,\n  $('Webhook (POST)').first().json.body.bankName,\n  $('Webhook (POST)').first().json.body.acctNo,\n  $('Webhook (POST)').first().json.body.acctName\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1824,
+        816
+      ],
+      "id": "__NODE_13__",
+      "name": "Save Payment Details + Confirm Order",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $('Validate Token + Fetch Order').first().json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  chat_id: $('Save Payment Details + Confirm Order').first().json.customer_chat_id,\n  text: '\u2705 <b>Order Confirmed!</b>\\n\\nYour order <b>' + $('Save Payment Details + Confirm Order').first().json.order_number + '</b> has been confirmed \ud83c\udf89\\n\\nTo complete your order, please make payment to:\\n\\n<b>Bank:</b> ' + $('Save Payment Details + Confirm Order').first().json.payment_bank_name + '\\n<b>Account Number:</b> <code>' + $('Save Payment Details + Confirm Order').first().json.payment_acct_no + '</code>\\n<b>Account Name:</b> ' + $('Save Payment Details + Confirm Order').first().json.payment_acct_name + '\\n\\nSend your receipt here once you\\'ve paid and we\\'ll confirm it quickly. Thank you! \ud83d\ude4f',\n  parse_mode: 'HTML'\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2480,
+        912
+      ],
+      "id": "__NODE_14__",
+      "name": "Notify Customer with Payment Details",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": true }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2704,
+        800
+      ],
+      "id": "__NODE_15__",
+      "name": "Respond: Success"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $('Fetch Order Customer Platform').first().json.customer_platform }}",
+              "rightValue": "whatsapp",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2240,
+        816
+      ],
+      "id": "__NODE_16__",
+      "name": "Is WA Customer?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "==[URL] $('Fetch Order Customer Platform').first().json.wa_instance }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $('Fetch Order Customer Platform').first().json.customer_chat_id.replace('@s.whatsapp.net', '') }}"
+            },
+            {
+              "name": "text",
+              "value": "=\u2705 Order Confirmed!\\n\\nYour order {{ $('Save Payment Details + Confirm Order').first().json.order_number }} has been confirmed \ud83c\udf89\\n\\nTo complete your order, please make payment to:\\nBank: {{ $('Save Payment Details + Confirm Order').first().json.payment_bank_name }}\\nAccount Number: {{ $('Save Payment Details + Confirm Order').first().json.payment_acct_no }}\\nAccount Name: {{ $('Save Payment Details + Confirm Order').first().json.payment_acct_name }}\\n\\nSend your receipt here once you've paid and we'll confirm it quickly. Thank you! \ud83d\ude4f"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2480,
+        688
+      ],
+      "id": "__NODE_17__",
+      "name": "Notify Customer with Payment Details (Whatsapp)",
+      "alwaysOutputData": false,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  co.customer_chat_id,\n  co.business_id,\n  CASE \n    WHEN co.customer_chat_id LIKE '%@s.whatsapp.net' THEN 'whatsapp' \n    ELSE 'telegram' \n  END AS customer_platform,\n  pi_wa.access_token AS wa_instance\nFROM table_1 co\nLEFT JOIN table_4 pi_wa\n  ON pi_wa.business_id = co.business_id\n  AND pi_wa.platform = 'whatsapp'\n  AND pi_wa.is_active = true\nWHERE co.id = $1::uuid\nLIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [$('Save Payment Details + Confirm Order').first().json.id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2048,
+        816
+      ],
+      "id": "__NODE_18__",
+      "name": "Fetch Order Customer Platform",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook (GET)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Order by Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Order by Token": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Respond with HTML Form",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond with Error Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook (POST)": {
+      "main": [
+        [
+          {
+            "node": "Validate Token + Fetch Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Token + Fetch Order": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?2": {
+      "main": [
+        [
+          {
+            "node": "Validate Password",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Token Expired",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Password": {
+      "main": [
+        [
+          {
+            "node": "Password Correct?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Password Correct?": {
+      "main": [
+        [
+          {
+            "node": "Save Payment Details + Confirm Order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Wrong Password",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Payment Details + Confirm Order": {
+      "main": [
+        [
+          {
+            "node": "Fetch Order Customer Platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Customer with Payment Details": {
+      "main": [
+        [
+          {
+            "node": "Respond: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is WA Customer?": {
+      "main": [
+        [
+          {
+            "node": "Notify Customer with Payment Details (Whatsapp)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Customer with Payment Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Customer with Payment Details (Whatsapp)": {
+      "main": [
+        [
+          {
+            "node": "Respond: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Order Customer Platform": {
+      "main": [
+        [
+          {
+            "node": "Is WA Customer?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "f42d252c-e565-4cb6-a436-3c36b468434f",
+  "versionCounter": 226,
+  "triggerCount": 2,
+  "shared": [
+    {
+      "updatedAt": "2026-04-27T19:07:58.432Z",
+      "createdAt": "2026-04-27T19:07:58.432Z",
+      "role": "workflow:owner",
+      "workflowId": "4iwwUImCM4zVAlBg",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version f42d252c",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.969845+00:00",
+    "original_name": "MySquad Order Confirm Page",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_customer_orders": "table_1",
+      "msq_business_profiles": "table_2",
+      "msq_tenants": "table_3",
+      "msq_platform_integrations": "table_4"
+    },
+    "columns_renamed": {
+      "id": "column_1",
+      "status": "column_2",
+      "tenant_id": "column_3"
+    }
+  }
+}

@@ -1,0 +1,213 @@
+{
+  "updatedAt": "2026-06-02T21:40:53.168Z",
+  "createdAt": "2026-06-02T21:17:57.037Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Catalogue Manager GET",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "mysquad-catalogue-manager",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "__NODE_1__",
+      "name": "Serve Catalogue Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        32
+      ],
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT token, tenant_id, business_id FROM table_1 column_1 $1 column_2 now() LIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [$('Serve Catalogue Webhook').first().json.query.token || ''] }}"
+        }
+      },
+      "id": "__NODE_2__",
+      "name": "Load Session",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        64,
+        32
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id::text, product_name, display_name, minio_url, price,\n  COALESCE(show_on_store, true) AS show_on_store, image_type, sort_order\nFROM table_2\ncolumn_3 $1::uuid column_4 $2::uuid\n  AND COALESCE(image_type, 'product') = 'product'\nORDER BY sort_order ASC, created_at ASC",
+        "options": {
+          "queryReplacement": "={{ [$('Load Session').first().json.tenant_id, $('Load Session').first().json.business_id] }}"
+        }
+      },
+      "id": "__NODE_3__",
+      "name": "Load Products",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        304,
+        32
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst q = $('Serve Catalogue Webhook').first().json.query || {};\nconst token = (q.token || '').trim();\n\nif (!token) {\n  return { json: { html: '<!DOCTYPE html><html><body style=\"font-family:sans-serif;text-align:center;padding:40px\"><h2 style=\"color:#F13A01\">Invalid link</h2></body></html>' } };\n}\n\nconst sessionRow = $('Load Session').first().json;\nif (!sessionRow || !sessionRow.tenant_id) {\n  return { json: { html: '<!DOCTYPE html><html><body style=\"font-family:sans-serif;text-align:center;padding:40px\"><h2 style=\"color:#F13A01\">Link expired</h2><p>Go back to your bot and request a new catalogue link.</p></body></html>' } };\n}\n\nconst tenantId   = sessionRow.tenant_id;\nconst businessId = sessionRow.business_id;\nconst products   = $('Load Products').all().map(r => r.json).filter(p => p.id);\nconst productsJson = JSON.stringify(products);\n\nconst html = `<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\"/>\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\"/>\n<title>Catalogue Manager</title>\n<style>\n:root{--accent:#F13A01;--accent-dark:#C42D00;--accent-pale:#FFF5F2;--accent-light:#FEE8E0;--text:#1C1917;--text-muted:#6B6560;--border:#E8E5E2;--bg:#F5F4F2;--surface:#fff;--radius:14px;}\n@media(prefers-color-scheme:dark){:root{--text:#F0EDE8;--text-muted:#9C9189;--border:#2E2926;--bg:#141210;--surface:#1E1B18;--accent-pale:rgba(241,58,1,.08);--accent-light:rgba(241,58,1,.18);}}\n*{box-sizing:border-box;margin:0;padding:0;}\nbody{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:80px;}\n.header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 20px;position:sticky;top:0;z-index:100;}\n.header h1{font-size:17px;font-weight:700;}\n.header p{color:var(--text-muted);font-size:12px;margin-top:2px;}\n.stats{padding:16px 16px 0;display:flex;gap:10px;}\n.stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;flex:1;text-align:center;}\n.stat-num{font-size:22px;font-weight:800;color:var(--accent);}\n.stat-lbl{font-size:11px;color:var(--text-muted);margin-top:2px;}\n.upload-zone{margin:16px;background:var(--surface);border:2px dashed var(--border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative;}\n.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:var(--accent-pale);}\n.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}\n.upload-icon{font-size:32px;margin-bottom:8px;}\n.upload-text{font-size:14px;color:var(--text-muted);line-height:1.5;}\n.upload-text strong{color:var(--accent);}\n.upload-progress{display:none;margin:0 16px 0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;}\n.upload-progress.show{display:block;}\n.progress-item{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--border);}\n.progress-item:last-child{border-bottom:none;}\n.progress-thumb{width:36px;height:36px;border-radius:6px;object-fit:cover;flex-shrink:0;background:var(--border);}\n.progress-info{flex:1;min-width:0;}\n.progress-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}\n.progress-status{font-size:11px;color:var(--text-muted);}\n.progress-status.done{color:#16A34A;}\n.progress-status.error{color:#DC2626;}\n.section-title{padding:16px 16px 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);}\n.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;padding:0 16px;}\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;position:relative;}\n.card-img{width:100%;aspect-ratio:1;object-fit:cover;background:var(--bg);display:block;}\n.card-img-placeholder{width:100%;aspect-ratio:1;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:32px;}\n.card-body{padding:10px;}\n.card-name{font-size:13px;font-weight:600;border:none;background:transparent;width:100%;color:var(--text);font-family:inherit;outline:none;border-bottom:1.5px solid transparent;transition:border-color .2s;padding:2px 0;}\n.card-name:focus{border-color:var(--accent);}\n.card-price-row{display:flex;align-items:center;gap:4px;margin-top:6px;}\n.card-price-sym{font-size:12px;color:var(--text-muted);}\n.card-price{font-size:13px;border:none;background:transparent;color:var(--text);font-family:inherit;outline:none;border-bottom:1.5px solid transparent;transition:border-color .2s;padding:2px 0;width:100%;}\n.card-price:focus{border-color:var(--accent);}\n.card-footer{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-top:1px solid var(--border);}\n.toggle-wrap{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);}\n.toggle{width:32px;height:18px;background:var(--border);border-radius:9px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0;}\n.toggle.on{background:var(--accent);}\n.toggle::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .2s;}\n.toggle.on::after{transform:translateX(14px);}\n.delete-btn{background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:16px;padding:2px;line-height:1;transition:color .2s;}\n.delete-btn:hover{color:#DC2626;}\n.saved-dot{position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:#16A34A;opacity:0;transition:opacity .4s;pointer-events:none;}\n.saved-dot.show{opacity:1;}\n.empty{text-align:center;padding:40px 20px;color:var(--text-muted);}\n.empty-icon{font-size:40px;margin-bottom:12px;}\n.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1C1917;color:#fff;padding:10px 18px;border-radius:30px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;white-space:nowrap;}\n.toast.show{opacity:1;}\n</style>\n</head>\n<body>\n<div class=\"header\">\n  <h1>Catalogue Manager \ud83d\udcf8</h1>\n  <p>Tap any name or price to edit \u2014 saves automatically</p>\n</div>\n\n<div class=\"stats\">\n  <div class=\"stat\"><div class=\"stat-num\" id=\"stat-total\">0</div><div class=\"stat-lbl\">Products</div></div>\n  <div class=\"stat\"><div class=\"stat-num\" id=\"stat-visible\">0</div><div class=\"stat-lbl\">Visible in store</div></div>\n</div>\n\n<div class=\"upload-zone\" id=\"upload-zone\">\n  <input type=\"file\" accept=\"image/*\" multiple id=\"file-input\"/>\n  <div class=\"upload-icon\">\ud83d\udcf7</div>\n  <div class=\"upload-text\">Tap to upload photos<br/><strong>Select multiple at once</strong><br/><span style=\"font-size:11px\">Max 5MB each \u2014 AI names them automatically</span></div>\n</div>\n\n<div class=\"upload-progress\" id=\"upload-progress\"></div>\n\n<div class=\"section-title\" id=\"products-title\" style=\"display:none\">Your Products</div>\n<div class=\"grid\" id=\"products-grid\"></div>\n<div class=\"empty\" id=\"empty-state\" style=\"display:none\">\n  <div class=\"empty-icon\">\ud83d\udecd</div>\n  <div>No products yet<br/><span style=\"font-size:13px\">Upload photos above to get started</span></div>\n</div>\n\n<div class=\"toast\" id=\"toast\"></div>\n\n<script>\nvar TOKEN = ${JSON.stringify(token)};\nvar TENANT_ID = ${JSON.stringify(tenantId)};\nvar BUSINESS_ID = ${JSON.stringify(businessId)};\nvar API = '/webhook/catalogue-manager-actions';\nvar products = ${productsJson};\n\nfunction api(action, body) {\n  return fetch(API, {\n    method: 'POST',\n    headers: {'Content-Type': 'application/json'},\n    body: JSON.stringify(Object.assign({ token: TOKEN, action: action }, body))\n  });\n}\n\nfunction showToast(msg) {\n  var t = document.getElementById('toast');\n  t.textContent = msg;\n  t.classList.add('show');\n  setTimeout(function(){ t.classList.remove('show'); }, 2200);\n}\n\nfunction updateStats() {\n  document.getElementById('stat-total').textContent = products.length;\n  document.getElementById('stat-visible').textContent = products.filter(function(p){ return p.show_on_store !== false; }).length;\n}\n\nfunction renderProducts() {\n  var grid = document.getElementById('products-grid');\n  var empty = document.getElementById('empty-state');\n  var title = document.getElementById('products-title');\n  grid.innerHTML = '';\n  if (!products.length) { empty.style.display = 'block'; title.style.display = 'none'; updateStats(); return; }\n  empty.style.display = 'none';\n  title.style.display = 'block';\n  products.forEach(function(p) { grid.appendChild(buildCard(p)); });\n  updateStats();\n}\n\nfunction buildCard(p) {\n  var card = document.createElement('div');\n  card.className = 'card';\n  card.id = 'card-' + p.id;\n\n  var dot = document.createElement('div');\n  dot.className = 'saved-dot';\n  dot.id = 'dot-' + p.id;\n  card.appendChild(dot);\n\n  if (p.minio_url) {\n    var img = document.createElement('img');\n    img.className = 'card-img';\n    img.src = p.minio_url;\n    img.alt = p.display_name || p.product_name || '';\n    card.appendChild(img);\n  } else {\n    var ph = document.createElement('div');\n    ph.className = 'card-img-placeholder';\n    ph.textContent = '\ud83d\uddbc';\n    card.appendChild(ph);\n  }\n\n  var body = document.createElement('div');\n  body.className = 'card-body';\n\n  var nameInput = document.createElement('input');\n  nameInput.type = 'text';\n  nameInput.className = 'card-name';\n  nameInput.value = p.display_name || p.product_name || '';\n  nameInput.placeholder = 'Product name';\n  nameInput.onblur = function() { saveField(p.id, 'display_name', nameInput.value); };\n  body.appendChild(nameInput);\n\n  var priceRow = document.createElement('div');\n  priceRow.className = 'card-price-row';\n  var sym = document.createElement('span');\n  sym.className = 'card-price-sym';\n  sym.textContent = '\u20a6';\n  var priceInput = document.createElement('input');\n  priceInput.type = 'number';\n  priceInput.className = 'card-price';\n  priceInput.value = p.price || '';\n  priceInput.placeholder = 'Price (optional)';\n  priceInput.min = 0;\n  priceInput.onblur = function() { saveField(p.id, 'price', priceInput.value); };\n  priceRow.appendChild(sym);\n  priceRow.appendChild(priceInput);\n  body.appendChild(priceRow);\n  card.appendChild(body);\n\n  var footer = document.createElement('div');\n  footer.className = 'card-footer';\n  var toggleWrap = document.createElement('div');\n  toggleWrap.className = 'toggle-wrap';\n  var toggle = document.createElement('div');\n  toggle.className = 'toggle' + (p.show_on_store !== false ? ' on' : '');\n  toggle.id = 'toggle-' + p.id;\n  var toggleLbl = document.createElement('span');\n  toggleLbl.id = 'togglelbl-' + p.id;\n  toggleLbl.textContent = p.show_on_store !== false ? 'Visible' : 'Hidden';\n  toggle.onclick = function() { toggleVisibility(p.id, toggle, toggleLbl); };\n  toggleWrap.appendChild(toggle);\n  toggleWrap.appendChild(toggleLbl);\n  var delBtn = document.createElement('button');\n  delBtn.className = 'delete-btn';\n  delBtn.textContent = '\u2715';\n  delBtn.onclick = function() { deleteProduct(p.id, card); };\n  footer.appendChild(toggleWrap);\n  footer.appendChild(delBtn);\n  card.appendChild(footer);\n  return card;\n}\n\nfunction flashDot(id) {\n  var dot = document.getElementById('dot-' + id);\n  if (dot) { dot.classList.add('show'); setTimeout(function(){ dot.classList.remove('show'); }, 1500); }\n}\n\nfunction saveField(id, field, value) {\n  api('update', { id: id, field: field, value: value })\n    .then(function(r){ if (r.ok) flashDot(id); })\n    .catch(function(){});\n}\n\nfunction toggleVisibility(id, toggleEl, lbl) {\n  var newVal = !toggleEl.classList.contains('on');\n  toggleEl.classList.toggle('on', newVal);\n  lbl.textContent = newVal ? 'Visible' : 'Hidden';\n  var p = products.find(function(x){ return x.id === id; });\n  if (p) p.show_on_store = newVal;\n  updateStats();\n  saveField(id, 'show_on_store', newVal ? 'true' : 'false');\n}\n\nfunction deleteProduct(id, card) {\n  if (!confirm('Remove this product from table_3 catalogue?')) return;\n  api('delete', { id: id }).then(function(r) {\n    if (r.ok) {\n      card.remove();\n      products = products.filter(function(p){ return p.id !== id; });\n      updateStats();\n      if (!products.length) {\n        document.getElementById('empty-state').style.display = 'block';\n        document.getElementById('products-title').style.display = 'none';\n      }\n      showToast('Product removed');\n    }\n  }).catch(function(){ showToast('Failed to delete \u2014 try again'); });\n}\n\n// Upload\nvar fileInput = document.getElementById('file-input');\nvar uploadZone = document.getElementById('upload-zone');\nvar progressWrap = document.getElementById('upload-progress');\n\nuploadZone.addEventListener('dragover', function(e){ e.preventDefault(); uploadZone.classList.add('drag'); });\nuploadZone.addEventListener('dragleave', function(){ uploadZone.classList.remove('drag'); });\nuploadZone.addEventListener('drop', function(e){ e.preventDefault(); uploadZone.classList.remove('drag'); handleFiles(e.dataTransfer.files); });\nfileInput.addEventListener('change', function(){ handleFiles(fileInput.files); fileInput.value = ''; });\n\nfunction handleFiles(files) {\n  if (!files.length) return;\n  progressWrap.innerHTML = '';\n  progressWrap.classList.add('show');\n  Array.from(files).forEach(function(file) { uploadFile(file); });\n}\n\nasync function uploadFile(file) {\n  if (file.size > 5 * 1024 * 1024) { showToast(file.name + ' too large (max 5MB)'); return; }\n\n  var itemEl = document.createElement('div');\n  itemEl.className = 'progress-item';\n  var thumb = document.createElement('img');\n  thumb.className = 'progress-thumb';\n  var fr = new FileReader();\n  fr.onload = function(e){ thumb.src = e.target.result; };\n  fr.readAsDataURL(file);\n  var info = document.createElement('div');\n  info.className = 'progress-info';\n  var nameEl = document.createElement('div');\n  nameEl.className = 'progress-name';\n  nameEl.textContent = file.name;\n  var statusEl = document.createElement('div');\n  statusEl.className = 'progress-status';\n  statusEl.textContent = 'Analysing image...';\n  info.appendChild(nameEl);\n  info.appendChild(statusEl);\n  itemEl.appendChild(thumb);\n  itemEl.appendChild(info);\n  progressWrap.appendChild(itemEl);\n\n  try {\n    var b64 = await new Promise(function(res) {\n      var r = new FileReader();\n      r.onload = function(e){ res(e.target.result.split(',')[1]); };\n      r.readAsDataURL(file);\n    });\n    var vRes = await fetch('/webhook/vision-analyse', {\n      method: 'POST',\n      headers: {'Content-Type': 'application/json'},\n      body: JSON.stringify({ image_b64: b64, mime_type: file.type })\n    });\n    var vision = await vRes.json();\n    var suggestedName = (vision.suggested_name && !vision.is_logo) ? vision.suggested_name : file.name.replace(/\\.[^.]+$/, '');\n    nameEl.textContent = suggestedName;\n    statusEl.textContent = 'Uploading...';\n\n    var fd = new FormData();\n    fd.append('token', TOKEN);\n    fd.append('action', 'add');\n    fd.append('product_name', suggestedName);\n    fd.append('mime_type', file.type);\n    fd.append('image', file, file.name);\n    var upRes = await fetch('/webhook/catalogue-manager-actions', { method: 'POST', body: fd });\n    var upData = await upRes.json();\n    if (!upRes.ok || !upData.id) throw new Error('Upload failed');\n\n    statusEl.textContent = 'Saved as \"' + suggestedName + '\" \u2713';\n    statusEl.className = 'progress-status done';\n    products.push(upData);\n    document.getElementById('products-grid').appendChild(buildCard(upData));\n    document.getElementById('empty-state').style.display = 'none';\n    document.getElementById('products-title').style.display = 'block';\n    updateStats();\n  } catch(e) {\n    statusEl.textContent = 'Failed \u2014 try again';\n    statusEl.className = 'progress-status error';\n  }\n}\n\nrenderProducts();\n</script>\n</body>\n</html>`;\n\nreturn { json: { html } };\n"
+      },
+      "id": "__NODE_4__",
+      "name": "Build Catalogue HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "__NODE_5__",
+      "name": "Serve Catalogue Page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        784,
+        32
+      ]
+    }
+  ],
+  "connections": {
+    "Serve Catalogue Webhook": {
+      "main": [
+        [
+          {
+            "node": "Load Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Session": {
+      "main": [
+        [
+          {
+            "node": "Load Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Products": {
+      "main": [
+        [
+          {
+            "node": "Build Catalogue HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Catalogue HTML": {
+      "main": [
+        [
+          {
+            "node": "Serve Catalogue Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "fc17cea6-1341-412f-9ee3-c62e06a3a9da",
+  "versionCounter": 13,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-06-02T21:17:57.037Z",
+      "createdAt": "2026-06-02T21:17:57.037Z",
+      "role": "workflow:owner",
+      "workflowId": "5k9glUMokvfyCosj",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version fc17cea6",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.806286+00:00",
+    "original_name": "MySquad Catalogue Manager GET",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_catalogue_sessions": "table_1",
+      "msq_product_images": "table_2",
+      "your": "table_3"
+    },
+    "columns_renamed": {
+      "token": "column_1",
+      "expires_at": "column_2",
+      "tenant_id": "column_3",
+      "business_id": "column_4"
+    }
+  }
+}

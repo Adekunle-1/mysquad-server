@@ -1,0 +1,3131 @@
+{
+  "updatedAt": "2026-05-14T10:12:01.136Z",
+  "createdAt": "2026-04-13T14:54:18.330Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "mysquad_owner_subworkflow",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"tenant_id\": \"uuid-string\",\n  \"business_id\": \"uuid-string\",\n  \"chat_id\": \"813122587\",\n  \"sender_id\": \"813122587\",\n  \"bot_token\": \"7823456789:AAFdef...\",\n  \"conversation_id\": \"uuid-of-conversation\",\n  \"text\": \"Generate a picture of a boy sleeping on a bicycle\",\n  \"message_type\": \"text\",\n  \"display_name\": \"adekunle\",\n  \"username\": \"adekunle_tee\",\n  \"image_id\": null,\n  \"caption\": null,\n  \"is_owner\": true,\n  \"source\": \"Telegram\"\n}"
+      },
+      "id": "__NODE_1__",
+      "typeVersion": 1.1,
+      "name": "Incoming Payload",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        144,
+        1680
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text || $json.caption || '' }}",
+        "options": {
+          "systemMessage": "={{ $json.system_prompt }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        960,
+        1680
+      ],
+      "id": "__NODE_2__",
+      "name": "MyGuy AI Agent",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=owner_{{ $json.chat_id }}_{{ $json.tenant_id }}_{{ $json.business_id }}",
+        "tableName": "msq_chat_histories",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        736,
+        1856
+      ],
+      "id": "__NODE_3__",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-embedding-001"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        880,
+        2048
+      ],
+      "id": "__NODE_4__",
+      "name": "Embeddings Google Gemini1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "__GOOGLE_CRED_ID",
+          "name": "Google API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Change what the agent calls the owner.\n\nWHEN TO USE:\n- \"Call me [name]\"\n- \"My name is [name]\"\n- \"Change my name to [name]\"\n\nPARAMETER:\n- preferred_name (string, required)\n\nRULES:\n- Only use when the owner explicitly gives a new name.\n- If the name is missing, ask what they want to be called.\n- Do not guess a name.",
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "msq_tenants",
+          "mode": "list",
+          "cachedResultName": "msq_tenants"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "updated_at": "={{ $now.toISO() }}",
+            "preferred_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('preferred_name', ``, 'string') }}",
+            "id": "={{ $json.tenant_id }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "telegram_id",
+              "displayName": "telegram_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "whatsapp_no",
+              "displayName": "whatsapp_no",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "phone_no",
+              "displayName": "phone_no",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "full_name",
+              "displayName": "full_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "preferred_name",
+              "displayName": "preferred_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "username",
+              "displayName": "username",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "password_hash",
+              "displayName": "password_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "location",
+              "displayName": "location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "onboarding_completed",
+              "displayName": "onboarding_completed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_language_style",
+              "displayName": "last_language_style",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_seen_at",
+              "displayName": "last_seen_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1088,
+        2144
+      ],
+      "id": "__NODE_5__",
+      "name": "Update table_1 Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Mark a reminder as completed.\n\nWHEN TO USE:\n- \"Done\"\n- \"I finished that\"\n- \"Mark that reminder complete\"\n- \"Completed [task]\"\n\nREQUIRED:\n- id\n\nRULES:\n- Use the reminder id from table_2 Reminders Tool.\n- If the owner has not identified one reminder clearly, list or clarify first.",
+        "operation": "executeQuery",
+        "query": "UPDATE table_3\ncolumn_1 'completed',\n  updated_at = NOW(),\n  last_sent_at = NOW(),\n  run_count = 0,\n  max_runs = 0\ncolumn_2 $1::uuid\n  column_3 $2::uuid\nRETURNING id, reminder_text, status",
+        "options": {
+          "queryReplacement": "={{ [  $json.tenant_id,  $fromAI('id', 'Reminder id to mark completed', 'string')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1728,
+        2352
+      ],
+      "id": "__NODE_6__",
+      "name": "Complete Reminder Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=List pending reminders for the owner.\n\nWHEN TO USE:\n- \"What reminders do I have?\"\n- \"Show my reminders\"\n- \"Any reminder for today?\"\n- \"What am I supposed to do later?\"\n\nRESPONSE RULE:\n- Present conversationally.\n- Show the most relevant reminders first.\n- Keep it short.",
+        "operation": "executeQuery",
+        "query": "SELECT\n  id,\n  reminder_text,\n  reminder_time,\n  next_run_time,\n  reminder_type,\n  status,\n  is_recurring,\n  metadata\nFROM table_3\ncolumn_2 $1::uuid\n  column_1 'pending'\nORDER BY next_run_time ASC",
+        "options": {
+          "queryReplacement": "={{ [$json.tenant_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1408,
+        2352
+      ],
+      "id": "__NODE_7__",
+      "name": "List Reminders Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Create a reminder for the owner.\n\nWHEN TO USE:\n- \"Remind me to...\"\n- \"Set a reminder for...\"\n- \"Remember to tell me...\"\n- time-based follow-ups like \"tomorrow at 2pm\", \"Friday morning\", \"next week\"\n\nREQUIRED:\n- reminder_text\n- reminder_time\n- next_run_time\n\nOPTIONAL:\n- reminder_type\n- is_recurring\n- metadata\n- status\n- max_runs\n\nRULES:\n- Convert natural-language time into a valid Lagos-time ISO timestamp.\n- If the reminder text or time is missing, ask before calling.\n- Use this tool only for actual reminder creation, not general memory saving.",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "msq_reminders",
+          "mode": "list",
+          "cachedResultName": "msq_reminders"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "reminder_text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('reminder_text', ``, 'string') }}",
+            "reminder_time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('reminder_time', ``, 'string') }}",
+            "reminder_type": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('reminder_type', ``, 'string') }}",
+            "next_run_time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('next_run_time', ``, 'string') }}",
+            "is_recurring": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('is_recurring', ``, 'boolean') }}",
+            "metadata": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('metadata', ``, 'json') }}",
+            "status": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('status', ``, 'string') }}",
+            "max_runs": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('max_runs', ``, 'number') }}",
+            "run_count": 0,
+            "tenant_id": "={{ $json.tenant_id }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reminder_text",
+              "displayName": "reminder_text",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reminder_time",
+              "displayName": "reminder_time",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "next_run_time",
+              "displayName": "next_run_time",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reminder_type",
+              "displayName": "reminder_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "is_recurring",
+              "displayName": "is_recurring",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "metadata",
+              "displayName": "metadata",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "max_runs",
+              "displayName": "max_runs",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "run_count",
+              "displayName": "run_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_sent_at",
+              "displayName": "last_sent_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1088,
+        2352
+      ],
+      "id": "__NODE_8__",
+      "name": "Set Reminder Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "=Handles personal banking and financial operations by forwarding requests to Speedy AI.\n\nUSE THIS TOOL FOR:\n- money transfers\n- checking personal bank or wallet balance\n- transaction history\n- airtime or data purchase\n- utility or TV bill payments\n- explicit requests to Speedy\n\nSTRONG TRIGGERS:\n- \"@Speedy ...\"\n- \"Speedy, ...\"\n- \"ask Speedy ...\"\n- \"tell Speedy ...\"\n- \"transfer money\"\n- \"send 5000 to ...\"\n- \"check my account balance\"\n- \"buy airtime\"\n- \"pay DSTV\"\n- \"show transaction history\"\n\nDO NOT USE THIS TOOL FOR:\n- MySquad platform balance, top-up, recharge, or pricing\n  -> use Get Balance & Recharge Info or Get Credit Usage History\n- finance news, exchange rates, crypto prices\n  -> use Web Search Tool\n- non-financial image analysis\n- generic educational finance questions\n\nIMPORTANT BOUNDARY:\n- \"How much balance do I have left on MySquad?\" -> NOT Speedy\n- \"What's in my bank account?\" -> Speedy\n\nINPUT RULE:\n- Pass the owner's exact message or caption unchanged.\n- Do not rewrite, summarize, or sanitize the message.\n\nFOLLOW-UP RULE:\n- If Speedy asked a follow-up question earlier and the owner replies with \"yes\", \"no\", an amount, an account number, or another continuation, call Speedy again with that exact reply.\n\nERROR RULE:\n- If Speedy returns a banking failure like \"insufficient balance\", relay it as a normal answer.\n- Only if the tool itself fails should you say Speedy is unavailable.",
+        "workflowId": {
+          "__rl": true,
+          "value": "UO0aVWbpZKpAlfc8",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/UO0aVWbpZKpAlfc8",
+          "cachedResultName": "Speedy Sub workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phonenumber": "REDACTED",
+            "message": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('message', ``, 'string') }}",
+            "id": "={{ $json.image_id || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "phonenumber",
+              "displayName": "phonenumber",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1936,
+        1856
+      ],
+      "id": "__NODE_9__",
+      "name": "Call Speedy Tool"
+    },
+    {
+      "parameters": {
+        "description": "=Use for Gmail and Google Calendar requests.\n\nWHEN TO USE:\n- reading or searching emails\n- sending or drafting emails\n- checking unread emails\n- calendar events and meetings\n- creating, updating, or deleting calendar events\n- Google Meet scheduling\n\nTRIGGERS:\n- \"Check my emails\"\n- \"Send an email to...\"\n- \"Any unread mail?\"\n- \"What meetings do I have today?\"\n- \"Schedule a meeting...\"\n- \"Create a calendar event\"\n\nINPUT:\n- query\n\nRULES:\n- Use for Gmail and Calendar only.\n- Do not use for general web search.\n- Present results conversationally, not as raw API output.",
+        "workflowId": {
+          "__rl": true,
+          "value": "ZMsRfxp9daKXKZh0SdLKC",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/ZMsRfxp9daKXKZh0SdLKC",
+          "cachedResultName": "Google Sub Workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "query": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('query', ``, 'string') }}",
+            "tenant_id": "={{ $json.tenant_id }}",
+            "messaging_channel": "={{ $json.source }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "query",
+              "displayName": "query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "messaging_channel",
+              "displayName": "messaging_channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1776,
+        1856
+      ],
+      "id": "__NODE_10__",
+      "name": "Call Google Tools"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        592,
+        1856
+      ],
+      "id": "__NODE_11__",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "__GROQ_CRED_ID",
+          "name": "Groq API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# Postgres Tools",
+        "height": 656,
+        "width": 1344
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1024,
+        2080
+      ],
+      "typeVersion": 1,
+      "id": "__NODE_12__",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Reschedule or update table_5 existing reminder.\n\nWHEN TO USE:\n- \"Move my reminder\"\n- \"Change the time\"\n- \"Reschedule [task]\"\n- \"Update table_6 reminder for [task]\"\n\nREQUIRED:\n- id\n- reminder_time\n- next_run_time\n\nRULES:\n- Use the reminder id from table_2 Reminders Tool.\n- If the target reminder or new time is unclear, ask first.",
+        "operation": "executeQuery",
+        "query": "UPDATE table_3\ncolumn_4 $3::timestamptz,\n  next_run_time = $4::timestamptz,\n  updated_at = NOW(),\n  run_count = 0,\n  max_runs = 0\ncolumn_2 $1::uuid\n  column_3 $2::uuid\nRETURNING id, reminder_text, reminder_time, next_run_time",
+        "options": {
+          "queryReplacement": "={{ [  $json.tenant_id,  $fromAI('id', 'Reminder id to update', 'string'),  $fromAI('reminder_time', 'New Lagos-time ISO timestamp', 'string'),  $fromAI('next_run_time', 'Next run Lagos-time ISO timestamp', 'string')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1248,
+        2352
+      ],
+      "id": "__NODE_13__",
+      "name": "Update table_4 Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Delete a reminder permanently.\n\nWHEN TO USE:\n- \"Delete my reminder\"\n- \"Remove [task] reminder\"\n- \"Cancel that reminder\"\n\nREQUIRED:\n- id\n\nRULES:\n- Use the reminder id from table_2 Reminders Tool.\n- If the owner is vague, ask which reminder they mean before deleting.",
+        "operation": "executeQuery",
+        "query": "DELETE FROM table_3\ncolumn_2 $1::uuid\n  column_3 $2::uuid\nRETURNING id, reminder_text",
+        "options": {
+          "queryReplacement": "={{ [  $json.tenant_id,  $fromAI('id', 'Reminder id to delete', 'string')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1568,
+        2352
+      ],
+      "id": "__NODE_14__",
+      "name": "Delete Reminder Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst incoming = $('Incoming Payload').first().json;\n\nreturn {\n  json: {\n    output:          data.output,\n    response_type:   data.response_type,\n    message_type_in: data.message_type_in || 'text',\n    gen_prompt:      data.gen_prompt      || null,\n    gen_mode:        data.gen_mode        || null,\n    buffer_message:  data.buffer_message  || null,\n    caption:         data.caption         || null,\n    // Required by main handler\n    bot_token:                  $('Build Owner Agent Config').first().json.bot_token,\n    chat_id:                    incoming.chat_id,\n    conversation_id:            incoming.conversation_id,\n    tenant_id:                  incoming.tenant_id,\n    user_message:               incoming.text || incoming.caption || '',\n    is_owner:                   true,\n    has_new_order:              data.has_new_order              || false,\n    order_number:               data.order_number               || null,\n    order_summary:              data.order_summary              || null,\n    has_order_confirmed:        data.has_order_confirmed        || false,\n    confirmed_order_number:     data.confirmed_order_number     || null,\n    confirmed_customer_chat_id: data.confirmed_customer_chat_id || null,\n    payment_confirmed:          data.payment_confirmed          || false,\n    payment_order_number:       data.payment_order_number       || null,\n    broadcast_message:          data.broadcast_message          || null,\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        1680
+      ],
+      "id": "__NODE_15__",
+      "name": "Respond To Input"
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Get live traffic and route details.\n\nWHEN TO USE:\n- commute questions\n- traffic and travel-time questions\n- route comparisons\n- \"how long to get to...\"\n- \"what route should I use?\"\n\nREQUIRED:\n- origin\n- destination\n\nRULES:\n- If either origin or destination is missing, ask first.\n- After the tool returns, summarize travel time, traffic level, main route, and better alternatives if any.",
+        "url": "[URL]",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "origin",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "destination",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters1_Value', ``, 'string') }}"
+            },
+            {
+              "name": "departure_time",
+              "value": "={{ Math.floor(Date.now() / 1000) }}"
+            },
+            {
+              "name": "traffic_model",
+              "value": "best_guess"
+            },
+            {
+              "name": "alternatives",
+              "value": "true"
+            },
+            {
+              "name": "key",
+              "value": "REDACTED_GOOGLE_KEY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        2112,
+        1856
+      ],
+      "id": "__NODE_16__",
+      "name": "Get Traffic Tool"
+    },
+    {
+      "parameters": {
+        "description": "=Search the web for current facts or news.\n\nWHEN TO USE:\n- live news\n- prices and rates\n- exchange rates\n- crypto prices\n- \"who is\", \"current\", \"today\", \"latest\", \"still\"\n- rankings, appointments, sports results, changing real-world facts\n\nRULE OF THUMB:\nIf the answer could have changed recently, use this tool.\n\nEXAMPLES:\n- \"Who is the US president?\"\n- \"Dollar rate today\"\n- \"Bitcoin price now\"\n- \"Latest Arsenal news\"\n- \"Who won the match today?\"\n\nPARAMETER:\n- Interest (short search query)\n\nRULES:\n- Do not answer changing facts from table_7 when this tool should be used.\n- After results return, answer conversationally from table_8 snippets.",
+        "workflowId": {
+          "__rl": true,
+          "value": "GwbVd9Sf2aNPWViH",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/GwbVd9Sf2aNPWViH",
+          "cachedResultName": "MySquad RSS Search Workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Interest": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Interest', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "Interest"
+          ],
+          "schema": [
+            {
+              "id": "Interest",
+              "displayName": "Interest",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1616,
+        1856
+      ],
+      "id": "__NODE_17__",
+      "name": "Web Search Tool"
+    },
+    {
+      "parameters": {
+        "jsCode": "const outputRaw = $('MyGuy AI Agent').first().json.output || '';\nconst incomingData = $('Incoming Payload').first().json;\n\nlet bufferMessage = null;\nlet caption = null;\nlet genPrompt = null;\nlet genMode = null;\nlet response_type = 'text';\nlet output = outputRaw;\nlet mediaType = null;\n\n// Notification flags\nlet hasOrderConfirmed = false;\nlet confirmedOrderNumber = null;\nlet confirmedCustomerChatId = null;\nlet paymentConfirmed = false;\nlet paymentOrderNumber = null;\nlet broadcastMessage = null;\n\n// Extract [BUFFER: ...]\nconst bufferMatch = outputRaw.match(/\\[BUFFER:\\s*(.*?)\\]/s);\nif (bufferMatch) {\n  bufferMessage = bufferMatch[1].trim();\n}\n\n// Extract [CAPTION: ...]\nconst captionMatch = outputRaw.match(/\\[CAPTION:\\s*(.*?)\\]/s);\nif (captionMatch) {\n  caption = captionMatch[1].trim();\n}\n\n// Extract [ORDER_CONFIRMED: ...]\nconst orderConfirmedMatch = outputRaw.match(/\\[ORDER_CONFIRMED:\\s*([\\w-]+)\\s*\\|\\s*(\\d+)\\]/);\nif (orderConfirmedMatch) {\n  hasOrderConfirmed = true;\n  confirmedOrderNumber = orderConfirmedMatch[1].trim();\n  confirmedCustomerChatId = orderConfirmedMatch[2].trim();\n}\n\n// Extract [PAYMENT_CONFIRMED: ...]\nconst paymentConfirmedMatch = outputRaw.match(/\\[PAYMENT_CONFIRMED:\\s*([\\w-]+)\\s*(?:\\|\\s*(\\d+))?\\]/);\nif (paymentConfirmedMatch) {\n  paymentConfirmed = true;\n  paymentOrderNumber = paymentConfirmedMatch[1].trim();\n  if (paymentConfirmedMatch[2]) {\n    confirmedCustomerChatId = paymentConfirmedMatch[2].trim();\n  }\n}\n\n// Extract [BROADCAST: ...]\nconst broadcastMatch = outputRaw.match(/\\[BROADCAST:\\s*([\\s\\S]*?)\\]/);\nif (broadcastMatch) {\n  broadcastMessage = broadcastMatch[1].trim().substring(0, 1000);\n}\n\n// Extract legacy generation tags\nconst imageGenMatch    = outputRaw.match(/\\[IMAGE_GEN:\\s*(.*?)\\]/s);\nconst videoGenMatch    = outputRaw.match(/\\[VIDEO_GEN:\\s*(.*?)\\]/s);\nconst image2imageMatch = outputRaw.match(/\\[IMAGE2IMAGE:\\s*(.*?)\\]/s);\nconst image2videoMatch = outputRaw.match(/\\[IMAGE2VIDEO:\\s*(.*?)\\]/s);\n\nif (imageGenMatch) {\n  response_type = 'image'; genPrompt = imageGenMatch[1].trim(); genMode = 'text_to_image'; mediaType = 'image';\n} else if (videoGenMatch) {\n  response_type = 'video'; genPrompt = videoGenMatch[1].trim(); genMode = 'text_to_video'; mediaType = 'video';\n} else if (image2imageMatch) {\n  response_type = 'image'; genPrompt = image2imageMatch[1].trim(); genMode = 'image_to_image'; mediaType = 'image';\n} else if (image2videoMatch) {\n  response_type = 'video'; genPrompt = image2videoMatch[1].trim(); genMode = 'image_to_video'; mediaType = 'video';\n}\n\n// Check for FAL_MEDIA_REQUEST\nconst hasFalRequest = outputRaw.includes('[FAL_MEDIA_REQUEST:');\n\nif (hasFalRequest) {\n  response_type = 'image';\n\n  const falStart = outputRaw.indexOf('[FAL_MEDIA_REQUEST:');\n  if (falStart !== -1) {\n    const braceStart = outputRaw.indexOf('{', falStart);\n    if (braceStart !== -1) {\n      let braceCount = 0;\n      let braceEnd = -1;\n      let inString = false;\n      let escapeNext = false;\n\n      for (let i = braceStart; i < outputRaw.length; i++) {\n        const char = outputRaw[i];\n        if (escapeNext) { escapeNext = false; continue; }\n        if (char === '\\\\') { escapeNext = true; continue; }\n        if (char === '\"') { inString = !inString; continue; }\n        if (!inString) {\n          if (char === '{') braceCount++;\n          if (char === '}') {\n            braceCount--;\n            if (braceCount === 0) { braceEnd = i; break; }\n          }\n        }\n      }\n\n      if (braceEnd !== -1) {\n        const falContent = outputRaw.substring(braceStart, braceEnd + 1);\n\n        const modeMatch   = falContent.match(/\"generation_mode\"\\s*:\\s*\"([^\"]+)\"/);\n        if (modeMatch) genMode = modeMatch[1];\n\n        const promptMatch = falContent.match(/\"prompt\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"/);\n        if (promptMatch) genPrompt = promptMatch[1].replace(/\\\\\"/g, '\"').replace(/\\\\\\\\/g, '\\\\');\n\n        if (genMode === 'text_to_image' || genMode === 'image_to_image') {\n          response_type = 'image'; mediaType = 'image';\n        } else if (genMode === 'text_to_video' || genMode === 'image_to_video') {\n          response_type = 'video'; mediaType = 'video';\n        }\n      }\n    }\n  }\n\n  if (!bufferMessage && genMode) bufferMessage = 'Gimme a sec...';\n  if (!caption && genMode) caption = 'Here you go!';\n\n  return {\n    json: {\n      output: outputRaw,\n      response_type,\n      message_type_in: incomingData.message_type || 'text',\n      gen_prompt: genPrompt,\n      gen_mode: genMode,\n      buffer_message: bufferMessage,\n      caption,\n      has_order_confirmed: hasOrderConfirmed,\n      confirmed_order_number: confirmedOrderNumber,\n      confirmed_customer_chat_id: confirmedCustomerChatId,\n      payment_confirmed: paymentConfirmed,\n      payment_order_number: paymentOrderNumber,\n      broadcast_message: broadcastMessage,\n    }\n  };\n}\n\n// \u2500\u2500 Non-media responses \u2014 clean output \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nlet cleanOutput = outputRaw;\ncleanOutput = cleanOutput\n  .replace(/\\[BUFFER:.*?\\]/s, '')\n  .replace(/\\[CAPTION:.*?\\]/s, '')\n  .replace(/\\[ORDER_CONFIRMED:.*?\\]/s, '')\n  .replace(/\\[PAYMENT_CONFIRMED:.*?\\]/s, '')\n  .replace(/\\[BROADCAST:[\\s\\S]*?\\]/g, '')\n  .trim();\n\nif (!cleanOutput || cleanOutput === '') {\n  cleanOutput = 'Done!';\n}\n\nreturn {\n  json: {\n    output: cleanOutput.trim(),\n    response_type,\n    message_type_in: incomingData.message_type || 'text',\n    gen_prompt: null,\n    gen_mode: null,\n    buffer_message: null,\n    caption: null,\n    has_order_confirmed: hasOrderConfirmed,\n    confirmed_order_number: confirmedOrderNumber,\n    confirmed_customer_chat_id: confirmedCustomerChatId,\n    payment_confirmed: paymentConfirmed,\n    payment_order_number: paymentOrderNumber,\n    broadcast_message: broadcastMessage,\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        1680
+      ],
+      "id": "__NODE_18__",
+      "name": "Output Classifier"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Cancel a recurring news or information subscription.\n\nWHEN TO USE:\n- \"Stop the updates\"\n- \"Cancel my sports news\"\n- \"Unsubscribe from table_9 news\"\n- \"Stop all updates\"\n\nPARAMETER:\n- topic_hint\n\nRULES:\n- If the owner wants one topic stopped, pass a short topic_hint like \"Arsenal\" or \"politics\".\n- If the owner wants all recurring updates stopped, pass an empty string.\n- Confirm conversationally which subscriptions were stopped.",
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_3 (\n  tenant_id,\n  reminder_text,\n  reminder_time,\n  next_run_time,\n  reminder_type,\n  status,\n  is_recurring,\n  max_runs,\n  run_count,\n  metadata,\n  created_at,\n  updated_at\n)\nVALUES (\n  $1::uuid,\n  $2,\n  $3::timestamptz,\n  $4::timestamptz,\n  'news_subscription',\n  'pending',\n  true,\n  $5::int,\n  0,\n  $6::jsonb,\n  NOW(),\n  NOW()\n)\nRETURNING id, reminder_text, next_run_time, reminder_type, status",
+        "options": {
+          "queryReplacement": "={{  [\n$('Build Owner Agent Config').first().json.user_id,\n$fromAI('reminder_text', 'Subscription text, e.g. Arsenal news every morning', 'string'),\n$fromAI('reminder_time', 'Base Lagos-time ISO timestamp', 'string'),\n$fromAI('next_run_time', 'Next run Lagos-time ISO timestamp', 'string'),\n$fromAI('max_runs', 'How many times to run', 'number'),\n$fromAI('metadata', 'JSON schedule metadata', 'json') || {}\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1248,
+        2144
+      ],
+      "id": "__NODE_19__",
+      "name": "Create Subscription Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "=Retrieve internal product knowledge about MyGuy and MySquad.\n\nWHEN TO USE:\n- \"What can you do?\"\n- \"How does MyGuy work?\"\n- \"Tell me about stored commands\"\n- \"What other agents are there?\"\n- \"What is MySquad?\"\n- product capability or internal platform questions\n\nDO NOT USE FOR:\n- general world knowledge\n- finance actions\n- Gmail or Calendar operations\n- customer orders or dispatch lookups\n\nRULES:\n- Answer from table_10 documentation.\n- Be honest if the documentation does not cover it.",
+        "tableName": "msq_embeddings",
+        "topK": 5,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        1856
+      ],
+      "id": "__NODE_20__",
+      "name": "My Guy Features and description",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "=Get live delivery quotes from table_11 carriers for a real customer order.\n\nWHEN TO USE:\n- \"Arrange delivery\"\n- \"Dispatch this order\"\n- \"Send this order by courier\"\n- after payment confirmation when the owner explicitly wants delivery arranged\n\nDO NOT USE:\n- for simple status changes like \"mark as dispatched\"\n- for tracking an already-created shipment\n- when the owner has not agreed to arrange delivery yet\n\nREQUIRED INPUTS:\n- sender_name\n- sender_phone\n- sender_address\n- sender_city\n- sender_state\n- sender_country\n- recipient_name\n- recipient_phone\n- recipient_address\n- recipient_city\n- recipient_state\n- recipient_country\n- item_name\n- item_weight_kg\n- item_value\n- order_number when known\n\nOPTIONAL:\n- item_description\n\nINPUT COLLECTION RULES:\n- Use the current order context first.\n- Use the order delivery_address for recipient details whenever available.\n- Use the business location as the default sender address unless the owner changes it.\n- Reuse known item name and order amount whenever possible.\n- Ask only for fields that are still missing.\n- Ask once, in one concise message.\n- If only one field is missing, ask only for that field.\n- Never repeat the same missing-field request in the same reply.\n\nAFTER TOOL RETURNS:\n- Summarize options briefly: carrier, amount, ETA.\n- Let the owner pick one rate before moving to confirmation.",
+        "workflowId": {
+          "__rl": true,
+          "value": "Bmg4daf9rCUyaYo8",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/Bmg4daf9rCUyaYo8",
+          "cachedResultName": "Terminal Africa Dispatch Tools"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "item_weight_kg": "={{ $fromAI('item_weight_kg', 'Weight in kg') }}",
+            "tool_name": "quotes",
+            "tenant_id": "={{ $json.user_id }}",
+            "sender_name": "={{ $fromAI('sender_name', `Full name of sender`, 'string') }}",
+            "sender_phone": "={{ $fromAI('sender_phone', 'Phone with country code') }}",
+            "sender_address": "={{ $fromAI('sender_address', 'Street address') }}",
+            "sender_city": "={{ $fromAI('sender_city', 'City') }}",
+            "sender_state": "={{ $fromAI('sender_state', 'State e.g. Lagos') }}",
+            "sender_country": "={{ $fromAI('sender_country', 'Country code e.g. NG') }}",
+            "recipient_name": "={{ $fromAI('recipient_name', 'Full name') }}",
+            "recipient_phone": "={{ $fromAI('recipient_phone', 'Phone with country code') }}",
+            "recipient_address": "={{ $fromAI('recipient_address', 'Street address') }}",
+            "recipient_city": "={{ $fromAI('recipient_city', 'City') }}",
+            "recipient_state": "={{ $fromAI('recipient_state', 'State') }}",
+            "recipient_country": "={{ $fromAI('recipient_country', 'Country code e.g. NG') }}",
+            "item_name": "={{ $fromAI('item_name', 'Item name') }}",
+            "item_description": "={{ $fromAI('item_description', 'Brief description') }}",
+            "item_value": "={{ $fromAI('item_value', 'Value in Naira') }}",
+            "business_id": "REDACTED",
+            "order_number": "={{ $fromAI('order_number', 'Original customer order number e.g. MSQ-XXXXXX', 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tool_name",
+              "displayName": "tool_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "business_id",
+              "displayName": "business_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "sender_name",
+              "displayName": "sender_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "sender_phone",
+              "displayName": "sender_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "sender_address",
+              "displayName": "sender_address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "sender_city",
+              "displayName": "sender_city",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "sender_state",
+              "displayName": "sender_state",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "sender_country",
+              "displayName": "sender_country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "recipient_name",
+              "displayName": "recipient_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "recipient_phone",
+              "displayName": "recipient_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "recipient_address",
+              "displayName": "recipient_address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "recipient_city",
+              "displayName": "recipient_city",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "recipient_state",
+              "displayName": "recipient_state",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "recipient_country",
+              "displayName": "recipient_country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "item_name",
+              "displayName": "item_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "item_description",
+              "displayName": "item_description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "item_weight_kg",
+              "displayName": "item_weight_kg",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "item_value",
+              "displayName": "item_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "shipment_id",
+              "displayName": "shipment_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "rate_id",
+              "displayName": "rate_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "payment_method",
+              "displayName": "payment_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": true
+            },
+            {
+              "id": "order_number",
+              "displayName": "order_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        2272,
+        1856
+      ],
+      "id": "__NODE_21__",
+      "name": "Terminal_Get Dispatch Quotes"
+    },
+    {
+      "parameters": {
+        "description": "=Book a selected courier rate for an existing shipment quote.\n\nWHEN TO USE:\n- after quotes have been returned\n- after the owner has chosen a carrier option\n- after shipment_id and rate_id are available\n\nREQUIRED:\n- shipment_id\n- rate_id\n- payment_method\n- amount\n- order_number\n\nRULES:\n- Use only after Terminal_Get Dispatch Quotes.\n- After success, tell the owner the shipment_id and tracking number.\n- This tool should also persist the dispatch back to the linked order.",
+        "workflowId": {
+          "__rl": true,
+          "value": "Bmg4daf9rCUyaYo8",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/Bmg4daf9rCUyaYo8",
+          "cachedResultName": "Terminal Africa Dispatch Tools"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tool_name": "confirm",
+            "tenant_id": "={{ $json.user_id }}",
+            "shipment_id": "={{ $fromAI('shipment_id', 'Terminal shipment ID') }}",
+            "rate_id": "={{ $fromAI('rate_id', 'Chosen rate ID') }}",
+            "payment_method": "={{ $fromAI('payment_method', 'speedy or cod') }}",
+            "amount": "={{ $fromAI('amount', 'Delivery cost in Naira') }}",
+            "business_id": "REDACTED",
+            "order_number": "={{ $fromAI('order_number', 'Original customer order number e.g. MSQ-XXXXXX', 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tool_name",
+              "displayName": "tool_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "business_id",
+              "displayName": "business_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "sender_name",
+              "displayName": "sender_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sender_phone",
+              "displayName": "sender_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sender_address",
+              "displayName": "sender_address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sender_city",
+              "displayName": "sender_city",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sender_state",
+              "displayName": "sender_state",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sender_country",
+              "displayName": "sender_country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_name",
+              "displayName": "recipient_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_phone",
+              "displayName": "recipient_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_address",
+              "displayName": "recipient_address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_city",
+              "displayName": "recipient_city",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_state",
+              "displayName": "recipient_state",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_country",
+              "displayName": "recipient_country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "item_name",
+              "displayName": "item_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "item_description",
+              "displayName": "item_description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "item_weight_kg",
+              "displayName": "item_weight_kg",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": true
+            },
+            {
+              "id": "item_value",
+              "displayName": "item_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": true
+            },
+            {
+              "id": "shipment_id",
+              "displayName": "shipment_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "rate_id",
+              "displayName": "rate_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "payment_method",
+              "displayName": "payment_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "order_number",
+              "displayName": "order_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        2432,
+        1856
+      ],
+      "id": "__NODE_22__",
+      "name": "Terminal_Confirm Dispatch Order"
+    },
+    {
+      "parameters": {
+        "description": "=Get live tracking for an existing shipment.\n\nWHEN TO USE:\n- owner already knows the shipment_id\n- live tracking is needed for a specific dispatch\n\nRULES:\n- If shipment_id is not known, use Context Resolver scope=dispatch first.\n- Do not guess a shipment_id.",
+        "workflowId": {
+          "__rl": true,
+          "value": "Bmg4daf9rCUyaYo8",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/Bmg4daf9rCUyaYo8",
+          "cachedResultName": "Terminal Africa Dispatch Tools"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tool_name": "track",
+            "tenant_id": "={{ $json.user_id }}",
+            "shipment_id": "={{ $fromAI('shipment_id', 'Optional shipment ID') }}",
+            "business_id": "REDACTED",
+            "order_number": "={{ $fromAI('order_number', 'Original customer order number e.g. MSQ-XXXXXX', 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tool_name",
+              "displayName": "tool_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "business_id",
+              "displayName": "business_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "sender_name",
+              "displayName": "sender_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sender_phone",
+              "displayName": "sender_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sender_address",
+              "displayName": "sender_address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sender_city",
+              "displayName": "sender_city",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sender_state",
+              "displayName": "sender_state",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sender_country",
+              "displayName": "sender_country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_name",
+              "displayName": "recipient_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_phone",
+              "displayName": "recipient_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_address",
+              "displayName": "recipient_address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_city",
+              "displayName": "recipient_city",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_state",
+              "displayName": "recipient_state",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "recipient_country",
+              "displayName": "recipient_country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "item_name",
+              "displayName": "item_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "item_description",
+              "displayName": "item_description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "item_weight_kg",
+              "displayName": "item_weight_kg",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": true
+            },
+            {
+              "id": "item_value",
+              "displayName": "item_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": true
+            },
+            {
+              "id": "shipment_id",
+              "displayName": "shipment_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "rate_id",
+              "displayName": "rate_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "payment_method",
+              "displayName": "payment_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": true
+            },
+            {
+              "id": "order_number",
+              "displayName": "order_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        2592,
+        1856
+      ],
+      "id": "__NODE_23__",
+      "name": "Terminal_Track Dispatch"
+    },
+    {
+      "parameters": {
+        "description": "=Read-only lookup tool for saved product images and existing dispatch records.\n\nSUPPORTED OPERATIONS:\n\n1. scope=products, operation=list\nUse for saved product-image lookup before image-to-image generation.\n\nOptional:\n- reference_text: product name only\n- limit\n\nRULES FOR PRODUCTS:\n- reference_text must be only the product name, not the full user message\n- use returned minio_url for saved product images\n- if one strong match exists, proceed\n- if multiple similar matches exist, ask a short clarification\n- never invent or guess a product URL\n\n2. scope=dispatch, operation=lookup_order\nUse to find one dispatch by:\n- exact_id\n- or natural-language reference_text such as order number, tracking number, item name, recipient name, city, state, street, or carrier\n\n3. scope=dispatch, operation=list_recent\nUse for recent dispatch history.\n\nDISPATCH RULES:\n- status=ok -> proceed\n- status=ambiguous -> ask one short clarification\n- status=not_found or missing_input -> ask for a clearer reference\n- if shipment_id becomes available, then call Terminal_Track Dispatch",
+        "workflowId": {
+          "__rl": true,
+          "value": "IyoIY8owu4gs8Emj",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/IyoIY8owu4gs8Emj",
+          "cachedResultName": "MySquad Context Resolver"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "limit": "={{ $fromAI('limit', 'Max results to return. Default is 5.', 'number') || 5 }}",
+            "scope": "={{ $fromAI('scope', 'products | dispatch', 'string') }}",
+            "operation": "={{ $fromAI('operation', 'list | lookup_order | list_recent', 'string') }}",
+            "reference_text": "={{ $fromAI('reference_text', 'For products: product name only. For dispatch: fuzzy search text such as product name, recipient name, city, carrier, or address text.', 'string') || '' }}",
+            "exact_id": "={{ $fromAI('exact_id', 'Specific shipment ID, tracking number, or order number if known. Leave blank if unknown.', 'string') || '' }}",
+            "tenant_id": "={{ $('Incoming Payload').first().json.tenant_id }}",
+            "business_id": "REDACTED"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "scope",
+              "displayName": "scope",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "operation",
+              "displayName": "operation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "reference_text",
+              "displayName": "reference_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "exact_id",
+              "displayName": "exact_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "business_id",
+              "displayName": "business_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "limit",
+              "displayName": "limit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        2768,
+        1856
+      ],
+      "id": "__NODE_24__",
+      "name": "Context Resolver Tool"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT tc.*,\n  pi.access_token AS bot_token,\n  (SELECT json_agg(json_build_object('key', m.key, 'value', m.value))\n   FROM table_12 m\n   WHERE m.business_id = tc.business_id\n     AND m.is_active = true\n     AND (m.expires_at IS NULL OR m.expires_at > now())\n  ) as agent_memories\nFROM table_13 tc\nJOIN table_14 pi\n  ON pi.business_id = tc.business_id AND pi.platform = 'telegram'\nWHERE tc.tenant_id   = $1::uuid\n  AND tc.business_id = $2::uuid",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Incoming Payload').first().json.tenant_id,\n  $('Incoming Payload').first().json.business_id\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        336,
+        1680
+      ],
+      "id": "__NODE_25__",
+      "name": "Load Owner Context",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=List active customer orders or bookings.\n\nWHEN TO USE:\n- \"What orders do I have?\"\n- \"Show active orders\"\n- \"Any bookings?\"\n- \"Show pending items\"\n- when you need the latest active order context before confirming or updating\n\nRETURNS:\n- order_number\n- status\n- payment_status\n- items\n- amount\n- delivery_type\n- address/contact context\n- customer_chat_id\n\nRULES:\n- Present conversationally.\n- Surface identifying details that help the owner distinguish one order from table_15\n- This tool is for active-order context, not for \"new order notification\" logic.",
+        "operation": "executeQuery",
+        "query": "SELECT\n  order_number, status, payment_status, items, total_amount,\n  delivery_type, delivery_address, scheduled_for,\n  customer_notes, customer_chat_id, created_at\nFROM table_16\ncolumn_5 $1::uuid\n  AND status NOT IN ('delivered', 'cancelled')\nORDER BY created_at DESC\nLIMIT 10",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Payload').first().json.business_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1568,
+        2144
+      ],
+      "id": "__NODE_26__",
+      "name": "List Orders Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Confirm a specific customer order or booking.\n\nWHEN TO USE:\n- \"Confirm MSQ-XXXXXX\"\n- \"Approve that order\"\n- \"Approve the Ketu delivery\"\n- \"Confirm Sylva's suit order\"\n\nREQUIRED:\n- order_number\n\nRULES:\n- Only call this tool after the target order has been resolved.\n- Resolution may come from table_17 order number or one strong natural-language match from table_18 orders.\n- If more than one candidate fits, ask one short natural-language clarification and stop.\n- Use natural descriptors first and order number second.\n- Do not mutate while the target is ambiguous.\n\nAFTER SUCCESS:\nAppend this invisible tag at the very end:\n[ORDER_CONFIRMED: <order_number> | <customer_chat_id>]",
+        "operation": "executeQuery",
+        "query": "UPDATE table_16\ncolumn_1 'confirmed', updated_at = now()\ncolumn_5 $1::uuid\n  column_6 $2\n  AND status IN ('enquiry', 'placed', 'pending')\nRETURNING order_number, customer_chat_id, status, items, total_amount",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Payload').first().json.business_id, $fromAI('order_number', 'ONLY the order number, exactly as shown. Format: MSQ-XXXXXX. No other words.', 'string')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1888,
+        2144
+      ],
+      "id": "__NODE_27__",
+      "name": "Confirm Order Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Update order status only.\n\nWHEN TO USE:\n- \"Mark order as preparing\"\n- \"Order is ready\"\n- \"Mark this as dispatched\"\n- \"Cancel this order\"\n- \"Mark the booking completed\"\n\nREQUIRED:\n- order_number\n- new_status\n\nVALID STATUS EXAMPLES:\n- preparing\n- ready\n- dispatched\n- delivered\n- cancelled\n\nRULES:\n- Use this only for status-only changes.\n- If the owner wants actual courier delivery, use Terminal Africa dispatch tools instead.\n- For service bookings, delivered means completed.",
+        "operation": "executeQuery",
+        "query": "UPDATE table_16\ncolumn_1 $3, updated_at = now()\ncolumn_5 $1::uuid\n  column_6 $2\nRETURNING order_number, status, customer_chat_id",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Payload').first().json.business_id, $fromAI('order_number', 'Order number e.g. MSQ-A3K7F2', 'string'), $fromAI('new_status', 'New status: preparing | ready | dispatched | delivered | cancelled', 'string')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2048,
+        2144
+      ],
+      "id": "__NODE_28__",
+      "name": "Update Order Status Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Confirm that payment has been received for a specific order.\n\nWHEN TO USE:\n- \"Payment confirmed for MSQ-XXXXXX\"\n- \"I've received payment for that order\"\n- after reviewing a customer's payment proof\n- after a single high-confidence match to an order awaiting payment confirmation\n\nREQUIRED:\n- order_number\n\nRULES:\n- Never call this tool until the target order is resolved.\n- Prefer matching against orders awaiting payment confirmation.\n- If exactly one candidate fits, proceed.\n- If more than one candidate fits, ask one short natural-language clarification and stop.\n- Use natural descriptors first and order number second.\n- Do not ask using order numbers alone unless there is no other distinguishing detail.\n- Do not mutate while the target is ambiguous.\n\nAFTER SUCCESS:\nAppend this invisible tag at the very end:\n[PAYMENT_CONFIRMED: <order_number> | <customer_chat_id>]\n\nPOST-SUCCESS:\n- If the order has delivery_type = delivery, ask:\n  \"Do you want me to arrange delivery now?\"\n- Do not auto-dispatch.",
+        "operation": "executeQuery",
+        "query": "UPDATE table_16\ncolumn_7 'confirmed',\n    payment_confirmed_at = now(),\n    updated_at = now()\ncolumn_5 $1::uuid\n  column_6 $2\n  AND payment_status IN ('unpaid', 'proof_submitted')\nRETURNING order_number, customer_chat_id, payment_status, total_amount, delivery_type, delivery_address",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Payload').first().json.business_id, $fromAI('order_number', 'Order number to confirm payment for', 'string')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1088,
+        2560
+      ],
+      "id": "__NODE_29__",
+      "name": "Confirm Payment Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Get full details of a specific order or booking.\n\nWHEN TO USE:\n- \"Show me order MSQ-XXXXXX\"\n- \"What did they order?\"\n- \"Where is it going?\"\n- before confirming or updating when the target order is not already clear\n\nRULES:\n- Present items or service, amount, delivery_type, scheduled time if any, address/contact, specs, notes if useful, and payment status.\n- Use this before mutation if the owner needs more context.",
+        "operation": "executeQuery",
+        "query": "SELECT order_number, status, payment_status, items, total_amount,\n       delivery_type, delivery_address, scheduled_for,\n       customer_notes, owner_notes, customer_chat_id, created_at\nFROM table_16\ncolumn_5 $1::uuid\n  column_6 $2",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Payload').first().json.business_id, $fromAI('order_number', 'The MSQ-XXXXXX order number', 'string')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1888,
+        2352
+      ],
+      "id": "__NODE_30__",
+      "name": "Get Order Details Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Save or replace internal owner notes on a specific order.\n\nWHEN TO USE:\n- \"Add a note to this order\"\n- \"Save this for order MSQ-XXXXXX\"\n- \"Note that customer wants gift wrap\"\n- \"Call before arrival\"\n\nREQUIRED:\n- order_number\n- notes\n\nRULES:\n- These notes are internal only.\n- Do not describe them as customer-facing.",
+        "operation": "executeQuery",
+        "query": "UPDATE table_16\ncolumn_8 $3, updated_at = now()\ncolumn_5 $1::uuid\n  column_6 $2\nRETURNING order_number, owner_notes",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Payload').first().json.business_id, $fromAI('order_number', 'MSQ-XXXXXX order number', 'string'), $fromAI('notes', 'Note to save on this order', 'string')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1568,
+        2560
+      ],
+      "id": "__NODE_31__",
+      "name": "Add Owner Notes Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Save a stable business fact or operating rule for future owner and customer conversations.\n\nWHEN TO USE:\n- \"Remember that our delivery fee is \u20a6500\"\n- \"Always note that we don't do refunds\"\n- \"Save this: we close at 6pm on Saturdays\"\n- stable business policies, operating constraints, or reference facts\n\nREQUIRED:\n- key\n- value\n\nRULES:\n- Use short snake_case keys.\n- Use for lasting business facts, not one-off reminders.",
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_12 (tenant_id, business_id, key, value, source)\nVALUES ($1::uuid, $2::uuid, $3, $4, 'owner_chat')\nON CONFLICT (business_id, key)\nDO UPDATE column_9 $4, updated_at = now(), is_active = true\nRETURNING key, value",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.user_id,\n  $('Incoming Payload').first().json.business_id,\n  $fromAI('key', 'Short label for this fact e.g. delivery_fee, closing_time', 'string'),\n  $fromAI('value', 'The fact or value to remember', 'string')\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1728,
+        2560
+      ],
+      "id": "__NODE_32__",
+      "name": "Save Memory Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Deactivate a saved business memory.\n\nWHEN TO USE:\n- \"Forget that delivery fee rule\"\n- \"Remove that refund rule\"\n- \"Stop remembering [X]\"\n\nREQUIRED:\n- key\n\nRULES:\n- Only use after the correct memory key has been identified.\n- If the owner is vague, use loaded business memory keys and ask which one they want removed.",
+        "operation": "executeQuery",
+        "query": "UPDATE table_12\ncolumn_10 false,\n    updated_at = now()\ncolumn_5 $1::uuid\n  column_11 $2\nRETURNING key",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Incoming Payload').first().json.business_id,\n  $fromAI('key', 'The memory key to forget e.g. delivery_fee', 'string')\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1248,
+        2560
+      ],
+      "id": "__NODE_33__",
+      "name": "Delete Memory Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=List recent customers and any saved customer notes.\n\nWHEN TO USE:\n- \"Who are my customers?\"\n- \"Show recent customers\"\n- \"What do I know about Ada?\"\n- before saving a customer note when you need the right platform_id\n\nRETURNS:\n- platform_id\n- customer identity fields\n- recent activity\n- saved notes\n\nRULES:\n- Present conversationally.\n- Surface platform_id internally for follow-up tool use.\n- Use this tool to identify a customer before saving or updating their note.",
+        "operation": "executeQuery",
+        "query": "SELECT\n  platform_id,\n  display_name,\n  username,\n  message_count,\n  last_seen_at,\n  notes\nFROM table_19\ncolumn_5 $1::uuid\nORDER BY last_seen_at DESC\nLIMIT 10",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Payload').first().json.business_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1728,
+        2144
+      ],
+      "id": "__NODE_34__",
+      "name": "List Customers Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Update table_8 business profile fields the owner explicitly wants to change.\n\nWHEN TO USE:\n- \"Update table_6 catalogue\"\n- \"Change my location\"\n- \"Update table_6 business description\"\n- \"Add this product to my catalogue\"\n\nOPTIONAL FIELDS:\n- catalogue_summary\n- location\n- description\n\nRULES:\n- Only populate fields the owner explicitly wants changed.\n- Leave other fields blank so they are preserved.",
+        "operation": "executeQuery",
+        "query": "UPDATE table_21\ncolumn_12 CASE WHEN NULLIF($2, '') IS NOT NULL THEN $2 ELSE catalogue_summary END,\n  location          = CASE WHEN NULLIF($3, '') IS NOT NULL THEN $3 ELSE location END,\n  description       = CASE WHEN NULLIF($4, '') IS NOT NULL THEN $4 ELSE description END,\n  updated_at        = now()\ncolumn_3 $1::uuid\nRETURNING business_name, catalogue_summary, location, description",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Incoming Payload').first().json.business_id,\n  $fromAI('catalogue_summary','Updated catalogue or empty string to keep current','string')||'',\n  $fromAI('location','Updated location or empty string to keep current','string')||'',\n  $fromAI('description','Updated description or empty string to keep current','string')||''\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1408,
+        2560
+      ],
+      "id": "__NODE_35__",
+      "name": "Update table_20 Profile Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Cancel a recurring news or information subscription.\n\nWHEN TO USE:\n- \"Stop the updates\"\n- \"Cancel my sports news\"\n- \"Unsubscribe from table_9 news\"\n- \"Stop all updates\"\n\nPARAMETER:\n- topic_hint\n\nRULES:\n- Use topic_hint when the owner wants a specific subscription cancelled.\n- If they want all subscriptions stopped, cancel all matching recurring news updates.",
+        "operation": "executeQuery",
+        "query": "UPDATE table_3\ncolumn_1 'completed', updated_at = NOW()\ncolumn_2 $1::uuid\n  column_13 'news_subscription'\n  column_1 'pending'\n  AND (\n    NULLIF($2, '') IS NULL\n    OR reminder_text ILIKE '%' || $2 || '%'\n  )\nRETURNING id, reminder_text, status",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Build Owner Agent Config').first().json.user_id,\n  $fromAI('topic_hint', 'Specific topic to stop, or empty string to stop all subscriptions', 'string') || ''\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1408,
+        2144
+      ],
+      "id": "__NODE_36__",
+      "name": "Cancel Subscription Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Authoritative source for MySquad balance, recharge instructions, and pricing.\n\nUSE THIS TOOL FOR:\n- current MySquad balance\n- top-up or recharge questions\n- platform pricing questions\n- \"how much do I have left?\"\n- \"how do I top up?\"\n- \"how much does image generation cost?\"\n\nDO NOT USE THIS TOOL FOR:\n- personal bank balance or transfers\n  -> use Call Speedy Tool\n\nRULES:\n- Always use this tool instead of memory for:\n  - platform balance\n  - bank details for top-up\n  - recharge instructions\n  - service pricing\n- Never invent these details outside the tool.",
+        "operation": "executeQuery",
+        "query": "SELECT balance, plan, plan_expires_at\nFROM table_22\ncolumn_2 $1::uuid",
+        "options": {
+          "queryReplacement": "={{ [$json.user_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2048,
+        2352
+      ],
+      "id": "__NODE_37__",
+      "name": "Get Balance & Recharge Info",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Show how the owner's MySquad naira has been spent.\n\nWHEN TO USE:\n- \"Where did my money go?\"\n- \"Show my usage\"\n- \"What did I spend on?\"\n- \"How many images have I generated?\"\n\nRULES:\n- Present grouped totals conversationally.\n- Use this for spend breakdown, not for current balance.",
+        "operation": "executeQuery",
+        "query": "SELECT \n  action_type,\n  COUNT(*)                        AS times_used,\n  SUM(credits_used)               AS total_naira_spent\nFROM table_23\ncolumn_2 $1::uuid\n  column_14 0\n  column_15= now() - interval '30 days'\nGROUP BY action_type\nORDER BY total_naira_spent DESC",
+        "options": {
+          "queryReplacement": "={{ [$json.user_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1888,
+        2560
+      ],
+      "id": "__NODE_38__",
+      "name": "Get Credit Usage History",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT order_number, status, payment_status, total_amount, items,\n       delivery_type, delivery_address, scheduled_for, customer_notes,\n       customer_chat_id, created_at\nFROM table_16\ncolumn_5 $1::uuid\n  AND status NOT IN ('delivered', 'cancelled')\nORDER BY created_at DESC\nLIMIT 5",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Payload').first().json.business_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        528,
+        1680
+      ],
+      "id": "__NODE_39__",
+      "name": "Load Pending Orders",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Permanently delete a saved product image.\n\nWHEN TO USE:\n- \"Delete my [product] image\"\n- \"Remove [product] photo\"\n- \"I don't need this product image anymore\"\n\nREQUIRED:\n- product_name\n\nRULES:\n- Only use after the target product image is clear.\n- If unclear, call List Product Images Tool first or ask which one to remove.\n- Confirm once before deleting.",
+        "operation": "executeQuery",
+        "query": "DELETE FROM table_24\ncolumn_5 $1::uuid\n  AND product_name ILIKE $2\nRETURNING product_name",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Payload').first().json.business_id, $fromAI('product_name', 'Product name to delete \u2014 case-insensitive match', 'string')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2208,
+        2352
+      ],
+      "id": "__NODE_40__",
+      "name": "Delete Product Image Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=List saved product image names for this business.\n\nWHEN TO USE:\n- \"Show my product images\"\n- \"What photos do I have?\"\n- \"List my uploads\"\n- before delete or replace when the owner is unsure\n\nRULES:\n- Present names only, not raw URLs.\n- Use this to help the owner choose the correct product image.",
+        "operation": "executeQuery",
+        "query": "SELECT product_name, upload_source, created_at\nFROM table_24\ncolumn_2 $1::uuid\n  column_5 $2::uuid\nORDER BY product_name ASC",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Incoming Payload').first().json.tenant_id,\n  $('Incoming Payload').first().json.business_id\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2208,
+        2144
+      ],
+      "id": "__NODE_41__",
+      "name": "List Product Images Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "=Send saved product images to the owner as Telegram buttons.\n\nWHEN TO USE:\n- \"Send me my product images\"\n- \"Let me see my uploads\"\n- \"Show me my saved catalogue photos\"\n\nOPTIONAL:\n- filter\n- header_text\n\nRULES:\n- Use when the owner wants to view the saved images directly in Telegram.",
+        "workflowId": {
+          "__rl": true,
+          "value": "0cRXCDnv9NhCkikp",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/0cRXCDnv9NhCkikp",
+          "cachedResultName": "MySquad Send Catalogue Tool Telegram"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $json.tenant_id }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "bot_token": "REDACTED",
+            "filter": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('filter', 'Optional product keyword to filter. Empty string shows all.', 'string') || '' }}",
+            "header_text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('header_text', 'Optional custom intro message. Leave empty for default.', 'string') || '' }}",
+            "business_id": "REDACTED"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "bot_token",
+              "displayName": "bot_token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "filter",
+              "displayName": "filter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "header_text",
+              "displayName": "header_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "business_id",
+              "displayName": "business_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        2912,
+        1856
+      ],
+      "id": "__NODE_42__",
+      "name": "Send Product Images Tool"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Save or replace a customer profile note.\n\nWHEN TO USE:\n- \"Mark Ada as VIP\"\n- \"Save Tunde's measurements\"\n- \"Note that this customer prefers delivery\"\n- \"Remember that this customer had a complaint\"\n\nREQUIRED:\n- platform_id\n- notes\n\nRULES:\n- If updating an existing note, read the current note first and then write the full updated note.\n- Use platform_id from table_2 Customers or order details.\n- Use for customer-level preferences and context, not order-specific notes.",
+        "operation": "executeQuery",
+        "query": "UPDATE table_19\ncolumn_16 $3\ncolumn_5 $1::uuid\n  column_17 $2::text\nRETURNING platform_id, display_name, notes",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Incoming Payload').first().json.business_id,\n  $fromAI('platform_id', 'Customer Telegram chat ID \u2014 from table_25 order details or List Customers tool', 'string'),\n  $fromAI('notes', 'Full notes about this customer. Replaces existing notes \u2014 include everything relevant.', 'string')\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2048,
+        2560
+      ],
+      "id": "__NODE_43__",
+      "name": "Save Customer Note Tool",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "=Save a new product image or replace an existing one.\n\nWHEN TO USE:\n- owner sends an image and says \"save this as [product]\"\n- \"replace my [product] image\"\n- \"this is my [product]\"\n- \"update [product] photo\"\n\nREQUIRED:\n- product_name\n- image_url\n\nRULES:\n- Only use when the current owner message includes an image and the product name is known.\n- image_url must be the Source Image URL from table_26 context.\n- If product name is missing, ask once.\n- If no current image exists, ask for the photo.\n- Do not invent image URLs.\n- After success, the saved image can later be retrieved through Context Resolver.",
+        "workflowId": {
+          "__rl": true,
+          "value": "w8e2yw8LkFvBOgtI",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/w8e2yw8LkFvBOgtI",
+          "cachedResultName": "MySquad Brand Image Upload"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $('Incoming Payload').first().json.tenant_id }}",
+            "product_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('product_name', ``, 'string') }}",
+            "image_url": "={{ $('Build Owner Agent Config').item.json.image_id }}",
+            "mime_type": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('mime_type', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "product_name",
+              "displayName": "product_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "image_url",
+              "displayName": "image_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "mime_type",
+              "displayName": "mime_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1456,
+        1856
+      ],
+      "id": "__NODE_44__",
+      "name": "Save Product Image Tool"
+    },
+    {
+      "parameters": {
+        "description": "=Update table_8 agent's name, tone, or default reply language.\n\nWHEN TO USE:\n- \"Rename my agent to Zara\"\n- \"Change your name to Ada\"\n- \"Make your tone more formal\"\n- \"Use Pidgin by default\"\n\nOPTIONAL:\n- agent_name\n- tone_summary\n- reply_language\n\nRULES:\n- Only pass the fields the owner wants changed.\n- Do not change unrelated settings.",
+        "workflowId": {
+          "__rl": true,
+          "value": "0mLsZkrHhnEMVaik",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/0mLsZkrHhnEMVaik",
+          "cachedResultName": "MySquad Update table_27 Config Tool"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $('Incoming Payload').first().json.tenant_id }}",
+            "business_id": "REDACTED",
+            "agent_name": "={{ $fromAI('agent_name', 'New display name for the agent. Leave blank to keep current.', 'string') || '' }}",
+            "tone_summary": "={{ $fromAI('tone_summary', 'New personality description e.g. warm and playful. Leave blank to keep current.', 'string') || '' }}",
+            "reply_language": "={{ $fromAI('reply_language', 'Language preference: en or pidgin. Leave blank to keep current.', 'string') || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "business_id",
+              "displayName": "business_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "agent_name",
+              "displayName": "agent_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "tone_summary",
+              "displayName": "tone_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "reply_language",
+              "displayName": "reply_language",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        3072,
+        1856
+      ],
+      "id": "__NODE_45__",
+      "name": "Update table_27 Config Tool"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $(\"Load Owner Context\").first().json || {};\nconst incoming = $(\"Incoming Payload\").first().json || {};\nconst pendingOrders = $(\"Load Pending Orders\").all()\n  .map(function (item) { return item.json || {}; })\n  .filter(function (order) { return order.order_number; });\n\nfunction safeParse(value, fallback) {\n  if (value === null || value === undefined || value === \"\") return fallback;\n  if (typeof value === \"string\") {\n    try {\n      const parsed = JSON.parse(value);\n      return parsed === null || parsed === undefined ? fallback : parsed;\n    } catch (error) {\n      return fallback;\n    }\n  }\n  return value;\n}\n\nfunction asArray(value) {\n  const parsed = safeParse(value, []);\n  return Array.isArray(parsed) ? parsed : [];\n}\n\nfunction asObject(value) {\n  const parsed = safeParse(value, {});\n  return parsed && typeof parsed === \"object\" && !Array.isArray(parsed) ? parsed : {};\n}\n\nfunction getMemory(memories, key) {\n  const row = memories.find(function (item) {\n    return item && item.key === key;\n  });\n  return row ? String(row.value || \"\") : \"\";\n}\n\nfunction formatMoney(value) {\n  const amount = Number(value || 0);\n  return Number.isFinite(amount) ? amount.toLocaleString(\"en-NG\") : String(value || \"0\");\n}\n\nfunction formatLocalNow() {\n  try {\n    return new Intl.DateTimeFormat(\"en-NG\", {\n      timeZone: \"Africa/Lagos\",\n      weekday: \"short\",\n      month: \"short\",\n      day: \"numeric\",\n      year: \"numeric\",\n      hour: \"2-digit\",\n      minute: \"2-digit\"\n    }).format(new Date());\n  } catch (error) {\n    return new Date().toISOString();\n  }\n}\n\nfunction formatWhen(value) {\n  if (!value) return \"\";\n  try {\n    return new Date(value).toLocaleString(\"en-NG\", {\n      timeZone: \"Africa/Lagos\",\n      weekday: \"short\",\n      month: \"short\",\n      day: \"numeric\",\n      hour: \"2-digit\",\n      minute: \"2-digit\"\n    });\n  } catch (error) {\n    return \"\";\n  }\n}\n\nfunction formatItems(items) {\n  const parsed = Array.isArray(items) ? items : safeParse(items, []);\n  if (!Array.isArray(parsed) || !parsed.length) return \"\";\n  return parsed\n    .map(function (item) {\n      const qty = item.quantity || 1;\n      const name = item.name || \"item\";\n      return String(qty) + \"x \" + String(name);\n    })\n    .join(\", \");\n}\n\nfunction formatAddress(address) {\n  const parsed = asObject(address);\n\n  const contactName =\n    parsed.recipient_name ||\n    parsed.contact_name ||\n    parsed.name ||\n    \"\";\n\n  const contactPhone =\n    parsed.recipient_phone ||\n    parsed.contact_phone ||\n    parsed.phone ||\n    \"\";\n\n  const city = parsed.city || \"\";\n  const state = parsed.state || \"\";\n  const country = parsed.country || \"\";\n  const street =\n    parsed.location_text ||\n    parsed.street ||\n    parsed.address ||\n    \"\";\n\n  const locationParts = [street, city, state, country].filter(Boolean);\n  const location = parsed.location_type === \"business_location\"\n    ? \"business location\"\n    : locationParts.join(\", \");\n\n  const locationShort = [city, state].filter(Boolean).join(\", \") || street || \"\";\n\n  return {\n    contactName: contactName,\n    contactPhone: contactPhone,\n    contact: [contactName, contactPhone].filter(Boolean).join(\" / \"),\n    location: location,\n    locationShort: locationShort\n  };\n}\n\nfunction buildOrderDescriptor(order) {\n  const deliveryType = String(order.delivery_type || \"\").toLowerCase();\n  const items = formatItems(order.items);\n  const address = formatAddress(order.delivery_address);\n  const whenText = formatWhen(order.scheduled_for);\n\n  const parts = [];\n  const lead =\n    items ||\n    (deliveryType === \"appointment\" ? \"booking\" : \"order\");\n\n  parts.push(lead);\n\n  if (address.contactName) {\n    parts.push(\"for \" + address.contactName);\n  }\n\n  if (deliveryType === \"delivery\" && address.locationShort) {\n    parts.push(\"to \" + address.locationShort);\n  } else if (deliveryType === \"pickup\") {\n    parts.push(\"pickup\");\n  }\n\n  if (whenText) {\n    parts.push(\"scheduled \" + whenText);\n  }\n\n  if (order.total_amount !== null && order.total_amount !== undefined && order.total_amount !== \"\") {\n    parts.push(\"\u20a6\" + formatMoney(order.total_amount));\n  }\n\n  return parts.join(\" | \");\n}\n\nfunction formatOrderLine(order, typicalDuration) {\n  const descriptor = buildOrderDescriptor(order);\n  const address = formatAddress(order.delivery_address);\n  const whenText = formatWhen(order.scheduled_for);\n\n  let line = \"- \" + descriptor + \" (\" + String(order.order_number) + \")\";\n  line += \" | status: \" + String(order.status || \"n/a\");\n  line += \" | payment: \" + String(order.payment_status || \"n/a\");\n  line += \" | type: \" + String(order.delivery_type || \"n/a\");\n\n  if (whenText && typicalDuration && String(order.delivery_type || \"\").toLowerCase() === \"appointment\") {\n    line += \" | duration: \" + typicalDuration;\n  }\n\n  if (address.contactPhone) {\n    line += \" | phone: \" + address.contactPhone;\n  }\n\n  if (address.location && String(order.delivery_type || \"\").toLowerCase() !== \"delivery\") {\n    line += \" | location: \" + address.location;\n  }\n\n  if (order.customer_notes) {\n    line += \" | specs: \" + String(order.customer_notes);\n  }\n\n  if (order.customer_chat_id) {\n    line += \" | customer_chat_id: \" + String(order.customer_chat_id);\n  }\n\n  return line;\n}\n\nfunction formatCandidateLine(order) {\n  return \"- \" + buildOrderDescriptor(order) + \" (\" + String(order.order_number) + \")\";\n}\n\nfunction section(title, body, sep) {\n  if (!body) return \"\";\n  return sep + \"\\n\" + title + \"\\n\" + sep + \"\\n\" + body;\n}\n\nconst memories = asArray(ctx.agent_memories);\nconst toneProfile = asObject(ctx.tone_profile);\nconst operatingHours = asObject(ctx.operating_hours);\nconst operatingDays = asArray(ctx.operating_days);\n\nconst agentRulesSource =\n  ctx.agent_rules && ctx.agent_rules.rules !== undefined\n    ? ctx.agent_rules.rules\n    : (ctx.agent_rules || []);\n\nconst agentRules = Array.isArray(agentRulesSource) ? agentRulesSource : asArray(agentRulesSource);\n\nconst agentName = ctx.agent_name || \"MyGuy\";\nconst businessName = ctx.business_name || \"your business\";\nconst ownerName =\n  ctx.preferred_name ||\n  ctx.full_name ||\n  incoming.display_name ||\n  incoming.username ||\n  \"Boss\";\n\nconst businessType = ctx.business_type || \"\";\nconst businessDesc = ctx.business_description || \"\";\nconst businessLocation = ctx.business_location || \"\";\nconst catalogueSummary = ctx.catalogue_summary || \"No catalogue yet.\";\nconst toneSummary = toneProfile.tone_summary || \"friendly and professional\";\nconst replyLanguage = String(ctx.reply_language || ctx.last_language_style || \"en\").toLowerCase();\n\nconst businessMode = ctx.business_mode || getMemory(memories, \"business_mode\") || \"product_only\";\nconst isServiceBusiness = businessMode === \"service_only\";\nconst isProductBusiness = businessMode === \"product_only\";\nconst isHybrid = businessMode === \"hybrid_product_led\" || businessMode === \"hybrid_service_led\";\nconst hasServiceComponent = isServiceBusiness || isHybrid;\nconst hasProductComponent = isProductBusiness || isHybrid;\n\nconst typicalDuration = getMemory(memories, \"typical_session_duration\");\nconst depositPolicy = getMemory(memories, \"deposit_policy\");\nconst cancellationPolicy = getMemory(memories, \"cancellation_policy\");\n\nlet hoursText = \"\";\nif (operatingDays.length) {\n  hoursText = \"Operating days: \" + operatingDays.join(\", \");\n  if (operatingHours.open && operatingHours.close) {\n    hoursText += \" (\" + operatingHours.open + \" - \" + operatingHours.close + \")\";\n  }\n}\n\nconst source = incoming.source || \"telegram\";\nconst msgType = incoming.message_type || \"text\";\nconst imageUrl = incoming.image_id || \"\";\nconst sep = \"\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\";\n\nconst activeOrdersText = pendingOrders.length\n  ? pendingOrders.map(function (order) {\n      return formatOrderLine(order, typicalDuration);\n    }).join(\"\\n\")\n  : \"No active orders or bookings right now.\";\n\nconst orderConfirmCandidates = pendingOrders.filter(function (order) {\n  const status = String(order.status || \"\").toLowerCase();\n  return [\"enquiry\", \"placed\", \"pending\"].includes(status);\n});\n\nconst paymentConfirmCandidates = pendingOrders.filter(function (order) {\n  return String(order.payment_status || \"\").toLowerCase() === \"proof_submitted\";\n});\n\nconst confirmCandidatesText = orderConfirmCandidates.length\n  ? orderConfirmCandidates.map(formatCandidateLine).join(\"\\n\")\n  : \"None.\";\n\nconst paymentCandidatesText = paymentConfirmCandidates.length\n  ? paymentConfirmCandidates.map(formatCandidateLine).join(\"\\n\")\n  : \"None.\";\n\nconst memoryText = memories.length\n  ? memories.map(function (item) {\n      return \"- \" + item.key + \": \" + item.value;\n    }).join(\"\\n\")\n  : \"None.\";\n\nconst rulesText = agentRules.length\n  ? agentRules.map(function (rule) {\n      return \"- \" + rule;\n    }).join(\"\\n\")\n  : \"None.\";\n\nconst ownerContext = [\n  \"Owner: \" + ownerName,\n  \"Business: \" + businessName,\n  businessType ? \"Type: \" + businessType : \"\",\n  businessDesc ? \"Description: \" + businessDesc : \"\",\n  businessLocation ? \"Location: \" + businessLocation : \"\",\n  hoursText,\n  \"Default reply language: \" + (replyLanguage === \"pidgin\" ? \"Pidgin\" : \"English\"),\n  \"Current Lagos time: \" + formatLocalNow(),\n  \"Source: \" + source,\n  \"Message type: \" + msgType,\n  imageUrl ? \"Source image URL: \" + imageUrl : \"\",\n  \"\",\n  \"Catalogue / offer: \" + catalogueSummary,\n  \"\",\n  \"Business memory:\",\n  memoryText,\n  \"\",\n  \"Business rules:\",\n  rulesText\n].filter(Boolean).join(\"\\n\");\n\nconst languageRules = [\n  \"Tone: \" + toneSummary,\n  \"Use either full English or full Pidgin based on the owner message. Never mix both in one reply.\",\n  \"Keep replies short, usually 1 to 3 sentences.\",\n  \"Lead with the answer, result, or question.\",\n  \"Do not narrate what you are about to do.\",\n  \"Never say you are an AI, bot, or assistant.\",\n  \"Use short clarification questions when more than one record fits.\"\n].join(\"\\n\");\n\nconst responseHygiene = [\n  \"One reply should contain one clean answer or one clean question.\",\n  \"Never repeat the same sentence, request, or reassurance in the same message.\",\n  \"If only one field is missing, ask only for that field.\",\n  \"If several dispatch fields are missing, ask for all of them once in one concise message.\",\n  \"Do not dump the full active-orders list unless the owner asked for a list.\"\n].join(\"\\n\");\n\nconst clarificationStyle = [\n  \"When clarifying between orders, use natural descriptors first and order number second.\",\n  \"Good style: Do you mean the 2x kaftan delivery to Yaba for Ada (MSQ-123456) or the pickup order for Tunde (MSQ-654321)?\",\n  \"Bad style: Do you mean MSQ-123456 or MSQ-654321?\",\n  \"Do not ask with order numbers alone if items, recipient, location, amount, or timing can distinguish the candidates.\"\n].join(\"\\n\");\n\nconst routingRules = [\n  \"Use List Orders for general order lists or the latest active items.\",\n  \"Use Get Order Details before mutating an order when the target is not already clear.\",\n  \"Use Confirm Order only for confirming a specific order or booking.\",\n  \"Use Update Order Status only for status-only changes.\",\n  \"Use Confirm Payment only after the target order is resolved.\",\n  \"Use Terminal Africa tools only for actual courier delivery, not simple status changes.\",\n  \"Use Context Resolver only for saved product image lookup or existing dispatch lookup.\",\n  \"Use Save Product Image only when the current message includes an image and the product name is known.\",\n  \"Use Get Balance & Recharge Info for MySquad balance, pricing, and top-up questions.\",\n  \"Use Get Credit Usage History for spend breakdown questions.\",\n  \"Use Call Speedy Tool for personal banking actions like transfers, bank balance, airtime, and bills.\",\n  \"Use Call Google Tools for Gmail and Calendar.\",\n  \"Use Web Search Tool for current facts, live news, rates, prices, rankings, and anything that may have changed recently.\"\n].join(\"\\n\");\n\nconst orderRules = [\n  \"You manage \" + (\n    hasServiceComponent && !hasProductComponent\n      ? \"bookings\"\n      : hasProductComponent && !hasServiceComponent\n        ? \"orders\"\n        : \"orders and bookings\"\n  ) + \" for \" + businessName + \".\",\n  \"When showing order details, surface items or service, amount, delivery_type, schedule if any, address or contact if any, specs, and payment status.\",\n  \"Resolve an order from table_28 language using order number, item name, recipient name, city, state, street, amount, delivery type, schedule, or recency.\",\n  \"If exactly one candidate fits, proceed.\",\n  \"If more than one candidate fits, ask one short clarification and stop. Do not mutate yet.\",\n  \"If no candidate fits, ask for the order number or a clearer reference.\",\n  \"For payment confirmation, prefer the ORDERS AWAITING PAYMENT CONFIRMATION block first.\",\n  \"Never call Confirm Payment until the target order is resolved.\",\n  \"If a mutation tool returns no matching row, explain that the order could not be updated and ask for a clearer reference or the current status. Do not append invisible tags.\",\n  \"After Confirm Order succeeds, append [ORDER_CONFIRMED: <order_number> | <customer_chat_id>] at the very end.\",\n  \"After Confirm Payment succeeds, append [PAYMENT_CONFIRMED: <order_number> | <customer_chat_id>] at the very end.\",\n  \"Never append invisible tags on clarification turns.\",\n  \"If the confirmed order has delivery_type = delivery, ask exactly once: Do you want me to arrange delivery now?\",\n  \"Do not arrange delivery automatically after payment.\",\n  hasServiceComponent ? \"For service bookings, delivered means completed.\" : \"\",\n  typicalDuration ? \"Typical duration: \" + typicalDuration : \"\",\n  depositPolicy ? \"Deposit policy: \" + depositPolicy : \"\",\n  cancellationPolicy ? \"Cancellation policy: \" + cancellationPolicy : \"\"\n].filter(Boolean).join(\"\\n\");\n\nconst dispatchRules = hasProductComponent ? [\n  \"Mark as dispatched or update table_29 to dispatched means Update Order Status Tool only.\",\n  \"Dispatch this order, arrange delivery, or send via courier means Terminal Africa tools.\",\n  \"Never create dispatch automatically just because payment was confirmed.\",\n  \"Start from table_30 order details and loaded business context first.\",\n  \"Ask only for missing dispatch fields.\",\n  \"Ask for missing dispatch fields once, in one concise message.\",\n  \"Do not repeat the same dispatch request in the same reply.\",\n  \"Flow: get quotes, owner picks rate, ask payment_method, confirm dispatch, and let the dispatch workflow persist the shipment and mark the linked customer order as dispatched.\",\n  \"If shipment_id is already known, use Terminal_Track Dispatch.\",\n  \"If shipment_id is not known, use Context Resolver with dispatch lookup first.\",\n  \"If dispatch lookup is ambiguous, ask one short clarification.\",\n  \"Treat loaded order data as the first source of truth for recipient, item, and delivery details.\",\n  \"Do not ask for recipient or order details that already exist in the active order context.\"\n].join(\"\\n\") : \"\";\n\nconst imageRules = [\n  \"Save or replace a product image only when the current message includes an image and the product name is known.\",\n  \"If product name is missing, ask once.\",\n  \"If no image was sent in the current message, ask for the photo.\",\n  \"When generating from table_31 saved product photo, call Context Resolver with scope products first and use the returned minio_url.\",\n  \"Never invent or guess an image URL.\"\n].join(\"\\n\");\n\nconst mediaRules = [\n  \"Ask for one short confirmation before generating media if user request is unclear.\",\n  \"After the owner agrees, output a short visible line, then [BUFFER: Gimme a sec...], then [FAL_MEDIA_REQUEST: {...}] in the same response.\",\n  \"The FAL_MEDIA_REQUEST JSON must contain EXACTLY these fields:\",\n  \"  generation_mode (required): text_to_image | image_to_image | text_to_video | image_to_video\",\n  \"  input (required): object with generation parameters\",\n  \"  input.prompt (required): the generation prompt string\",\n  \"  input.image_size: 'square_hd' \u2014 always include for image modes\",\n  \"  input.image_urls: array with one URL \u2014 only for image_to_image\",\n  \"  input.start_image_url: string URL \u2014 only for image_to_video\",\n  \"EXAMPLE: [FAL_MEDIA_REQUEST: {\\\"generation_mode\\\": \\\"text_to_image\\\", \\\"input\\\": {\\\"prompt\\\": \\\"a cute cat\\\", \\\"image_size\\\": \\\"square_hd\\\"}}]\",\n  \"Never omit generation_mode. Never put prompt outside of input. Never add an endpoint field.\",\n  \"If a saved product image is needed, resolve it first with Context Resolver.\"\n].join(\"\\n\");\n\nconst customerProfileRules = [\n  \"Use List Customers to read customer notes and recent customer context.\",\n  \"Use Save Customer Note to write or replace a customer profile note.\",\n  \"When updating an existing note, read the current note first and then write the full updated note.\",\n  \"Use platform_id from order details or customer lookup when saving customer notes.\"\n].join(\"\\n\");\n\nconst memoryRules = [\n  \"Use Save Memory for stable business facts or operating rules.\",\n  \"Use short snake_case keys when saving memory.\",\n  \"Use Delete Memory only after identifying the correct saved key from table_32 business memory.\"\n].join(\"\\n\");\n\nconst hardRules = [\n  \"Invisible tags are for the outer handler only. Never explain them to the owner.\",\n  \"Only append ORDER_CONFIRMED or PAYMENT_CONFIRMED after the matching tool succeeds.\",\n  \"Do not append tags on clarification turns.\",\n  \"Put invisible tags at the very end of the reply.\",\n  \"Never invent order numbers, customer chat IDs, shipment IDs, URLs, bank details, or balances.\",\n  \"If you are unsure which record the owner means, ask a short clarification instead of guessing.\"\n].join(\"\\n\");\n\nconst promptSections = [\n  \"You are \" + agentName + \", the owner-facing agent for \" + businessName + \". Be warm, direct, concise, and useful.\",\n  section(\"OWNER CONTEXT\", ownerContext, sep),\n  section(\"LANGUAGE & STYLE\", languageRules, sep),\n  section(\"RESPONSE HYGIENE\", responseHygiene, sep),\n  section(\"CLARIFICATION STYLE\", clarificationStyle, sep),\n  section(\"ACTIVE ORDERS & BOOKINGS\", activeOrdersText, sep),\n  section(\"ORDERS AWAITING ORDER CONFIRMATION\", confirmCandidatesText, sep),\n  section(\"ORDERS AWAITING PAYMENT CONFIRMATION\", paymentCandidatesText, sep),\n  section(\"TOOL ROUTING\", routingRules, sep),\n  section(\"ORDER RULES\", orderRules, sep),\n  dispatchRules ? section(\"DISPATCH RULES\", dispatchRules, sep) : \"\",\n  section(\"PRODUCT IMAGE RULES\", imageRules, sep),\n  section(\"MEDIA RULES\", mediaRules, sep),\n  section(\"CUSTOMER PROFILE RULES\", customerProfileRules, sep),\n  section(\"BUSINESS MEMORY RULES\", memoryRules, sep),\n  section(\"HARD RULES\", hardRules, sep)\n];\n\nconst systemPrompt = promptSections.filter(Boolean).join(\"\\n\\n\");\n\nreturn {\n  json: {\n    system_prompt: systemPrompt,\n    text: incoming.text || incoming.caption || \"\",\n    caption: incoming.caption || \"\",\n    tenant_id: incoming.tenant_id,\n    chat_id: incoming.chat_id,\n    sender_id: incoming.sender_id,\n    user_id: incoming.tenant_id,\n    phone_no: ctx.phone_no || \"\",\n    username: incoming.display_name || incoming.username || \"\",\n    display_name: incoming.display_name || \"\",\n    source: source,\n    message_type: msgType,\n    image_id: imageUrl,\n    bot_token: incoming.bot_token || ctx.bot_token || \"\",\n    conversation_id: incoming.conversation_id || \"\",\n    is_owner: incoming.is_owner\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        1680
+      ],
+      "id": "__NODE_46__",
+      "name": "Build Owner Agent Config"
+    }
+  ],
+  "connections": {
+    "Incoming Payload": {
+      "main": [
+        [
+          {
+            "node": "Load Owner Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MyGuy AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Output Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "My Guy Features and description",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Name Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete Reminder Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Reminders Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Reminder Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Speedy Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Google Tools": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Reminders Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Reminder Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Traffic Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Search Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Classifier": {
+      "main": [
+        [
+          {
+            "node": "Respond To Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Subscription Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "My Guy Features and description": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Terminal_Get Dispatch Quotes": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Terminal_Confirm Dispatch Order": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Terminal_Track Dispatch": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Context Resolver Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Owner Context": {
+      "main": [
+        [
+          {
+            "node": "Load Pending Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Orders Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm Order Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Order Status Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm Payment Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Order Details Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Owner Notes Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Memory Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Memory Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Customers Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Business Profile Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancel Subscription Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Balance & Recharge Info": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Credit Usage History": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Pending Orders": {
+      "main": [
+        [
+          {
+            "node": "Build Owner Agent Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Product Image Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Product Images Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Product Images Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Customer Note Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Product Image Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Agent Config Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Owner Agent Config": {
+      "main": [
+        [
+          {
+            "node": "MyGuy AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "Incoming Payload": [
+      {
+        "json": {
+          "tenant_id": "REDACTED_OPAQUE_TOKEN",
+          "business_id": "REDACTED",
+          "chat_id": "996797292",
+          "sender_id": "REDACTED",
+          "bot_token": "REDACTED",
+          "conversation_id": "REDACTED_OPAQUE_TOKEN",
+          "text": "I have received the payment",
+          "message_type": "text",
+          "display_name": "Nelly",
+          "username": "",
+          "image_id": "",
+          "caption": "",
+          "is_owner": true,
+          "source": "telegram"
+        }
+      }
+    ]
+  },
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": null,
+  "versionCounter": 1389,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-13T14:54:18.330Z",
+      "createdAt": "2026-04-13T14:54:18.330Z",
+      "role": "workflow:owner",
+      "workflowId": "0HTUl4TWqxD3Ezw1",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version e384b794",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:22.002944+00:00",
+    "original_name": "mysquad_owner_subworkflow",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "Name": "table_1",
+      "List": "table_2",
+      "msq_reminders": "table_3",
+      "Reminders": "table_4",
+      "an": "table_5",
+      "my": "table_6",
+      "memory": "table_7",
+      "the": "table_8",
+      "politics": "table_9",
+      "retrieved": "table_10",
+      "multiple": "table_11",
+      "msq_agent_memory": "table_12",
+      "msq_tenant_context": "table_13",
+      "msq_platform_integrations": "table_14",
+      "another.": "table_15",
+      "msq_customer_orders": "table_16",
+      "exact": "table_17",
+      "active": "table_18",
+      "msq_customers": "table_19",
+      "Business": "table_20",
+      "msq_business_profiles": "table_21",
+      "msq_credits": "table_22",
+      "msq_credit_transactions": "table_23",
+      "msq_product_images": "table_24",
+      "their": "table_25",
+      "owner": "table_26",
+      "Agent": "table_27",
+      "natural": "table_28",
+      "status": "table_29",
+      "saved": "table_30",
+      "a": "table_31",
+      "loaded": "table_32"
+    },
+    "columns_renamed": {
+      "status": "column_1",
+      "tenant_id": "column_2",
+      "id": "column_3",
+      "reminder_time": "column_4",
+      "business_id": "column_5",
+      "order_number": "column_6",
+      "payment_status": "column_7",
+      "owner_notes": "column_8",
+      "value": "column_9",
+      "is_active": "column_10",
+      "key": "column_11",
+      "catalogue_summary": "column_12",
+      "reminder_type": "column_13",
+      "credits_used": "column_14",
+      "created_at": "column_15",
+      "notes": "column_16",
+      "platform_id": "column_17"
+    }
+  }
+}

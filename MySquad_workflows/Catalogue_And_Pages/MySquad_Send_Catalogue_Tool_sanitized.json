@@ -1,0 +1,385 @@
+{
+  "updatedAt": "2026-06-03T10:57:17.187Z",
+  "createdAt": "2026-04-29T19:55:14.948Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Send Catalogue Tool",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"tenant_id\": \"uuid-string\",\n  \"chat_id\": \"813122587\",\n  \"bot_token\": \"7823456789:AAFdef...\",\n  \"filter\": \"\",\n  \"header_text\": \"\",\n  \"business_id\": \"string\",\n  \"source\": \"telegram\",\n  \"wa_instance\": \"msq_xxxxx\"\n}"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1312,
+        16
+      ],
+      "id": "__NODE_1__",
+      "name": "Incoming Payload"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(display_name, product_name) AS product_name, minio_url\nFROM table_1\ncolumn_1 $1::uuid\n  column_2 $2::uuid\n  column_3 'product'\n  column_4 true\n  AND minio_url IS NOT NULL\n  AND ($3 = '' OR COALESCE(display_name, product_name) ILIKE '%' || $3 || '%')\nORDER BY sort_order ASC, product_name ASC\nLIMIT 10",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.tenant_id,\n  $json.business_id,\n  $json.filter || ''\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1120,
+        16
+      ],
+      "id": "__NODE_2__",
+      "name": "Fetch Product Images",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\nconst incoming = $('Incoming Payload').first().json;\n\nconst images = rows.filter(r => r.json.product_name && r.json.minio_url);\nconst count = images.length;\n\nif (count === 1) {\n  return [{\n    json: {\n      count,\n      endpoint: 'sendPhoto',\n      bot_token: incoming.bot_token,\n      body: {\n        chat_id: incoming.chat_id,\n        photo: images[0].json.minio_url,\n        caption: images[0].json.product_name\n      }\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    count,\n    endpoint: 'sendMediaGroup',\n    bot_token: incoming.bot_token,\n    body: {\n      chat_id: incoming.chat_id,\n      media: images.map(img => ({\n        type: 'photo',\n        media: img.json.minio_url,\n        caption: img.json.product_name\n      }))\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        16
+      ],
+      "id": "__NODE_3__",
+      "name": "Build Keyboard"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-images",
+              "leftValue": "=$json.product_name",
+              "rightValue": true,
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -928,
+        16
+      ],
+      "id": "__NODE_4__",
+      "name": "Has Images?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $json.bot_token + '/' + $json.endpoint }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -352,
+        16
+      ],
+      "id": "__NODE_5__",
+      "name": "Send Catalogue Buttons",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const count = $('Build Keyboard').first().json.count || 0;\nreturn [{ json: { count } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        16
+      ],
+      "id": "__NODE_6__",
+      "name": "Return Count"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { count: 0 } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        112
+      ],
+      "id": "__NODE_7__",
+      "name": "Return Zero"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $('Incoming Payload').item.json.source }}",
+              "rightValue": "whatsapp",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -736,
+        -80
+      ],
+      "id": "__NODE_8__",
+      "name": "Route by Platform"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\nconst incoming = $('Incoming Payload').first().json;\n\nreturn rows\n  .filter(r => r.json.product_name && r.json.minio_url)\n  .map((r, i, arr) => ({\n    json: {\n      wa_instance: incoming.wa_instance,\n      number: incoming.chat_id,\n      caption: r.json.product_name,\n      media: r.json.minio_url,\n      total_count: arr.length\n    }\n  }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        -176
+      ],
+      "id": "__NODE_9__",
+      "name": "Expand WA Images"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $json.wa_instance }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"number\": $json.number,\n  \"mediatype\": \"image\",\n  \"caption\": $json.caption,\n  \"media\": $json.media\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -352,
+        -176
+      ],
+      "id": "__NODE_10__",
+      "name": "Send WA Media",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const first = $input.first().json;\nreturn [{ json: { count: first.total_count || $input.all().length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -176
+      ],
+      "id": "__NODE_11__",
+      "name": "Return WA Count"
+    }
+  ],
+  "connections": {
+    "Incoming Payload": {
+      "main": [
+        [
+          {
+            "node": "Fetch Product Images",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Product Images": {
+      "main": [
+        [
+          {
+            "node": "Has Images?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Keyboard": {
+      "main": [
+        [
+          {
+            "node": "Send Catalogue Buttons",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Images?": {
+      "main": [
+        [
+          {
+            "node": "Route by Platform",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Zero",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Catalogue Buttons": {
+      "main": [
+        [
+          {
+            "node": "Return Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Platform": {
+      "main": [
+        [
+          {
+            "node": "Expand WA Images",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Keyboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand WA Images": {
+      "main": [
+        [
+          {
+            "node": "Send WA Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WA Media": {
+      "main": [
+        [
+          {
+            "node": "Return WA Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "bcdcc59e-b328-4034-8474-72c376ef9d7a",
+  "versionCounter": 125,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-29T19:55:14.948Z",
+      "createdAt": "2026-04-29T19:55:14.948Z",
+      "role": "workflow:owner",
+      "workflowId": "0cRXCDnv9NhCkikp",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version bcdcc59e",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:22.028851+00:00",
+    "original_name": "MySquad Send Catalogue Tool",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_product_images": "table_1"
+    },
+    "columns_renamed": {
+      "tenant_id": "column_1",
+      "business_id": "column_2",
+      "image_type": "column_3",
+      "show_on_store": "column_4"
+    }
+  }
+}

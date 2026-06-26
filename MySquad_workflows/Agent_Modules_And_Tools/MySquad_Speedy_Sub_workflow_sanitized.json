@@ -1,5 +1,11 @@
 {
+  "updatedAt": "2026-05-03T08:43:10.437Z",
+  "createdAt": "2026-02-01T15:36:08.662Z",
+  "id": "__WORKFLOW_ID__",
   "name": "Speedy Sub workflow",
+  "description": null,
+  "active": true,
+  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -164,7 +170,6 @@
       }
     }
   ],
-  "pinData": {},
   "connections": {
     "When Executed by Another Workflow": {
       "main": [
@@ -228,19 +233,58 @@
       ]
     }
   },
-  "active": true,
   "settings": {
     "executionOrder": "v1",
-    "availableInMCP": false
+    "availableInMCP": false,
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "message": "Send 50000 to Adewale 08105465541",
+          "phonenumber": 2348105465541,
+          "id": ""
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
   },
   "versionId": "__VERSION_ID__",
-  "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "__INSTANCE_ID__"
+  "activeVersionId": "2d549a8c-2d98-49cd-a3a9-f098bf925f8c",
+  "versionCounter": 309,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-02-01T15:36:08.662Z",
+      "createdAt": "2026-02-01T15:36:08.662Z",
+      "role": "workflow:owner",
+      "workflowId": "UO0aVWbpZKpAlfc8",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 2d549a8c",
+    "description": ""
   },
-  "id": "__WORKFLOW_ID__",
   "_sanitization_metadata": {
-    "sanitized_at": "2026-03-21T15:18:01.183971+00:00",
+    "sanitized_at": "2026-06-26T13:55:22.032264+00:00",
     "original_name": "Speedy Sub workflow",
     "note": "Sensitive data replaced with placeholders.",
     "tables_renamed": {},

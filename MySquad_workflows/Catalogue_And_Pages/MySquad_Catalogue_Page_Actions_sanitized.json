@@ -1,0 +1,308 @@
+{
+  "updatedAt": "2026-06-04T09:06:54.825Z",
+  "createdAt": "2026-06-03T16:13:39.654Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Catalogue Page Actions",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "store-action",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "__NODE_1__",
+      "name": "Store Action Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2864,
+        1408
+      ],
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  bp.id             AS business_id,\n  bp.tenant_id,\n  bp.business_name,\n  pi_tg.access_token AS bot_token,\n  pi_tg.bot_username,\n  t.whatsapp_no      AS wa_number,\n  pi_wa.access_token AS wa_instance\nFROM table_1 bp\nLEFT JOIN table_2 t\n  ON t.id = bp.tenant_id\nLEFT JOIN table_3 pi_tg\n  ON pi_tg.business_id = bp.id AND pi_tg.platform = 'telegram' AND pi_tg.is_active = true\nLEFT JOIN table_3 pi_wa\n  ON pi_wa.business_id = bp.id AND pi_wa.platform = 'whatsapp' AND pi_wa.is_active = true\nWHERE bp.store_token = $1\n   OR bp.id = NULLIF($2, '')::uuid\nLIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Store Action Webhook').first().json.body.store_token || '',\n  $('Store Action Webhook').first().json.body.biz_id || ''\n] }}"
+        }
+      },
+      "id": "__NODE_2__",
+      "name": "Lookup Business Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2624,
+        1408
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "sa-check-biz",
+              "leftValue": "={{ $('Lookup Business Context').first().json.business_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "__NODE_3__",
+      "name": "Has Required Context?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2384,
+        1408
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "sa-check-chatid",
+              "leftValue": "={{ $('Store Action Webhook').first().json.body.chat_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "__NODE_4__",
+      "name": "Has Chat ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2144,
+        1408
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=[URL] $('Lookup Business Context').first().json.tenant_id }}&businessId={{ $('Lookup Business Context').first().json.business_id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  message: {\n    message_id: 0,\n    from: {\n      id:         parseInt($('Store Action Webhook').first().json.body.chat_id),\n      first_name: 'Customer',\n      username:   ''\n    },\n    chat: {\n      id:   parseInt($('Store Action Webhook').first().json.body.chat_id),\n      type: 'private'\n    },\n    text: $('Store Action Webhook').first().json.body.message\n  }\n} }}",
+        "options": {}
+      },
+      "id": "__NODE_5__",
+      "name": "Inject into Agent Handler",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1648,
+        1328
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "__NODE_6__",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -1904,
+        1328
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, mode: 'new_customer' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "__NODE_7__",
+      "name": "Respond OK (new customer)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -1904,
+        1488
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'Store not found' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "__NODE_8__",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -2384,
+        1568
+      ]
+    }
+  ],
+  "connections": {
+    "Store Action Webhook": {
+      "main": [
+        [
+          {
+            "node": "Lookup Business Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Business Context": {
+      "main": [
+        [
+          {
+            "node": "Has Required Context?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Required Context?": {
+      "main": [
+        [
+          {
+            "node": "Has Chat ID?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Chat ID?": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond OK (new customer)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond OK": {
+      "main": [
+        [
+          {
+            "node": "Inject into Agent Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "1486b863-bba3-438a-ac63-73177df7585a",
+  "versionCounter": 31,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-06-03T16:13:39.654Z",
+      "createdAt": "2026-06-03T16:13:39.654Z",
+      "role": "workflow:owner",
+      "workflowId": "5Aiv6LRnBZK1U2Uv",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 1486b863",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.816440+00:00",
+    "original_name": "MySquad Catalogue Page Actions",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_business_profiles": "table_1",
+      "msq_tenants": "table_2",
+      "msq_platform_integrations": "table_3"
+    },
+    "columns_renamed": {}
+  }
+}

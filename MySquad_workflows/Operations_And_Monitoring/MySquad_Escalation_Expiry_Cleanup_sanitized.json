@@ -1,0 +1,143 @@
+{
+  "updatedAt": "2026-05-03T08:42:22.035Z",
+  "createdAt": "2026-05-03T07:50:52.385Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Escalation Expiry Cleanup",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "__NODE_1__",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Mark escalations as expired if past their expiry time\n-- and clean up any orphaned sessions in the same statement\nWITH expired AS (\n  UPDATE table_1\n  column_1 'expired',\n      replied_at = now()\n  column_1 'pending'\n    column_2 now()\n  RETURNING id\n),\ncleaned_sessions AS (\n  DELETE FROM table_2 s\n  WHERE s.escalation_id IN (SELECT id FROM table_3)\n     OR s.expires_at < now()\n  RETURNING s.id\n)\nSELECT \n  (SELECT COUNT(*) FROM table_3)          AS escalations_expired,\n  (SELECT COUNT(*) FROM table_4) AS sessions_cleaned;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "__NODE_2__",
+      "name": "Expire Stale Escalations",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nconst expired  = result.escalations_expired  || 0;\nconst cleaned  = result.sessions_cleaned || 0;\n\nif (expired > 0 || cleaned > 0) {\n  console.log(`Escalation cleanup: ${expired} escalations expired, ${cleaned} sessions cleaned`);\n}\n\nreturn { json: { escalations_expired: expired, sessions_cleaned: cleaned, ran_at: new Date().toISOString() } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "__NODE_3__",
+      "name": "Log Result"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Expire Stale Escalations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expire Stale Escalations": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": {
+    "node:Schedule Trigger": {
+      "recurrenceRules": []
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "994f2f67-87c4-4499-80f3-b59d0a109e7e",
+  "versionCounter": 13,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-05-03T07:50:52.385Z",
+      "createdAt": "2026-05-03T07:50:52.385Z",
+      "role": "workflow:owner",
+      "workflowId": "VOILfFe3GcbifsNn",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 994f2f67",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.848658+00:00",
+    "original_name": "MySquad Escalation Expiry Cleanup",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_escalations": "table_1",
+      "msq_escalation_sessions": "table_2",
+      "expired": "table_3",
+      "cleaned_sessions": "table_4"
+    },
+    "columns_renamed": {
+      "status": "column_1",
+      "expires_at": "column_2"
+    }
+  }
+}

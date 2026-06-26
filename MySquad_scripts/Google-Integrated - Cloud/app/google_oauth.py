@@ -107,3 +107,29 @@ def refresh_access_token(refresh_token: str) -> dict:
     response = requests.post(TOKEN_URL, data=data)
     response.raise_for_status()
     return response.json()
+
+
+def get_google_userinfo(access_token: str) -> dict:
+    """
+    Fetch the authenticated user's profile from Google.
+    Returns sub (platform_user_id) and email (platform_email).
+
+    Args:
+        access_token: Valid Google OAuth access token.
+
+    Returns:
+        Dict with keys: sub, email, email_verified, name, picture (etc.)
+        Returns empty dict if the request fails — callers treat these as optional.
+    """
+    try:
+        response = requests.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Could not fetch Google userinfo: {str(e)}")
+        return {}

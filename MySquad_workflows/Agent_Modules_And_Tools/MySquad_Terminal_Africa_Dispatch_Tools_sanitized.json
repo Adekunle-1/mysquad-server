@@ -1,0 +1,1654 @@
+{
+  "updatedAt": "2026-05-31T08:50:44.222Z",
+  "createdAt": "2026-04-14T16:07:59.826Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "Terminal Africa Dispatch Tools",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ============================================================\n-- msq_dispatch_orders \u2014 Terminal Africa dispatch order history\n-- ============================================================\n-- Depends on: msq_tenants (id uuid PK)\n-- Run AFTER msq_tenants has been created.\n-- ============================================================\n\nCREATE TABLE IF NOT EXISTS msq_dispatch_orders (\n    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),\n    tenant_id         UUID        NOT NULL\n                                  REFERENCES msq_tenants(id) ON DELETE CASCADE,\n    -- Terminal Africa references\n    shipment_id       TEXT        NOT NULL,           -- SH-XXXXXXX\n    carrier_name      TEXT,                           -- e.g. DHL, Sendbox, Gokada\n    -- Pricing\n    amount            NUMERIC(12,2),                  -- delivery cost\n    -- Status tracking\n    status            TEXT        NOT NULL DEFAULT 'draft',     -- draft | confirmed | in_transit | delivered | cancelled\n    payment_status    TEXT        NOT NULL DEFAULT 'pending',   -- pending | paid | cod\n    payment_method    TEXT,       -- speedy | cod\n    -- Tracking\n    tracking_number   TEXT,\n    tracking_url      TEXT,\n    -- Address snapshots (jsonb so we keep a local record even if Terminal changes)\n    pickup_address    JSONB,      -- { first_name, last_name, phone, email, line1, city, state, country, zip }\n    delivery_address  JSONB,      -- same shape\n    -- Parcel snapshot\n    parcel_info       JSONB,      -- { item_name, description, weight_kg, quantity, value, currency }\n    -- Timestamps\n    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),\n    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\n-- ============================================================\n-- Indexes\n-- ============================================================\n\n-- Fast lookup by tenant (list my orders)\nCREATE INDEX idx_dispatch_tenant\n    ON msq_dispatch_orders (tenant_id);\n\n-- Fast lookup by Terminal shipment ID (tracking, confirm, webhook)\nCREATE INDEX idx_dispatch_shipment\n    ON msq_dispatch_orders (shipment_id);\n\n-- Status queries (all in-transit, all pending payment, etc.)\nCREATE INDEX idx_dispatch_status\n    ON msq_dispatch_orders (status);\n\n-- Recent orders per tenant (sorted by newest first)\nCREATE INDEX idx_dispatch_tenant_created\n    ON msq_dispatch_orders (tenant_id, created_at DESC);\n\n-- ============================================================\n-- Auto-update table_1 on row change\n-- ============================================================\n\nCREATE OR REPLACE FUNCTION update_dispatch_orders_updated_at()\nRETURNS TRIGGER AS $$\nBEGIN\n    NEW.updated_at = now();\n    RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql;\n\nCREATE TRIGGER trg_dispatch_orders_updated_at\n    BEFORE UPDATE table_2 msq_dispatch_orders\n    FOR EACH ROW\n    EXECUTE FUNCTION update_dispatch_orders_updated_at();\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -416,
+        800
+      ],
+      "id": "__NODE_1__",
+      "name": "msq_dispatch_orders",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Tool 3 \u2014 Track Dispatch\n\n1. IF shipment_id \u2192 GET live status + DB lookup\n2. IF no shipment_id \u2192 List recent from table_3\n3. Sync status back to DB\n4. Return tracking events or order list",
+        "height": 416,
+        "width": 1616,
+        "color": 5
+      },
+      "id": "__NODE_2__",
+      "name": "Sticky Note - Track Flow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        384,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Tool 2 \u2014 Confirm Dispatch Order\n\n1. Lookup Order from table_3\n2. IF speedy \u2192 Call Speedy \u2192 Check result\n3. IF COD or Speedy OK \u2192 Arrange Pickup\n4. Update Order \u2192 confirmed + tracking\n5. Return confirmation details",
+        "height": 560,
+        "width": 2196,
+        "color": 3
+      },
+      "id": "__NODE_3__",
+      "name": "Sticky Note - Confirm Flow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        384,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Tool 1 \u2014 Get Dispatch Quotes\n\n1. Create Pickup Address \u2014 POST /addresses\n2. Create Delivery Address \u2014 POST /addresses (parallel)\n3. Create Parcel \u2014 POST /parcels\n4. Create Shipment \u2014 POST /shipments (draft)\n5. Get Rates \u2014 GET /rates/shipment\n6. Save Draft Order \u2014 INSERT msq_dispatch_orders\n7. Return \u2014 shipment_id, order_id, rates[]",
+        "height": 384,
+        "width": 1968
+      },
+      "id": "__NODE_4__",
+      "name": "Sticky Note - Quotes Flow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        384,
+        -224
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"tool_name\": \"quotes\",\n  \"tenant_id\": \"uuid-string\",\n  \"business_id\": \"uuid-string\",\n  \"sender_name\": \"John Doe\",\n  \"sender_phone\": \"[PHONE]\",\n  \"sender_address\": \"12 Broad Street\",\n  \"sender_city\": \"Lagos\",\n  \"sender_state\": \"Lagos\",\n  \"sender_country\": \"NG\",\n  \"recipient_name\": \"Jane Smith\",\n  \"recipient_phone\": \"[PHONE]\",\n  \"recipient_address\": \"5 Wuse Road\",\n  \"recipient_city\": \"Abuja\",\n  \"recipient_state\": \"FCT\",\n  \"recipient_country\": \"NG\",\n  \"item_name\": \"Shoes\",\n  \"item_description\": \"Nike Air Max\",\n  \"item_weight_kg\": 2,\n  \"item_value\": 25000,\n  \"shipment_id\": \"SH-XXXXXXX\",\n  \"rate_id\": \"RT-XXXXXXX\",\n  \"payment_method\": \"cod\",\n  \"amount\": 5000,\n  \"order_number\": \"MSQ-XXXXXX\"\n}"
+      },
+      "id": "__NODE_5__",
+      "name": "Incoming Tool Request",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool_name }}",
+                    "rightValue": "quotes",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool_name }}",
+                    "rightValue": "confirm",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool_name }}",
+                    "rightValue": "track",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "REDACTED_OPAQUE_TOKEN"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "__NODE_6__",
+      "name": "Route Tool",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        240,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "first_name",
+              "value": "={{ $json.sender_name.split(' ')[0] }}"
+            },
+            {
+              "name": "last_name",
+              "value": "={{ $json.sender_name.split(' ').slice(1).join(' ') }}"
+            },
+            {
+              "name": "phone",
+              "value": "={{ $json.sender_phone }}"
+            },
+            {
+              "name": "email",
+              "value": "[EMAIL]"
+            },
+            {
+              "name": "line1",
+              "value": "={{ $json.sender_address }}"
+            },
+            {
+              "name": "city",
+              "value": "={{ $json.sender_city }}"
+            },
+            {
+              "name": "state",
+              "value": "={{ $json.sender_state }}"
+            },
+            {
+              "name": "country",
+              "value": "={{ $json.sender_country }}"
+            },
+            {
+              "name": "is_residential",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "__NODE_7__",
+      "name": "Create Pickup Address",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        832,
+        -176
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "first_name",
+              "value": "={{ $('Incoming Tool Request').first().json.recipient_name.split(' ')[0] }}"
+            },
+            {
+              "name": "last_name",
+              "value": "={{ $('Incoming Tool Request').first().json.recipient_name.split(' ').slice(1).join(' ') }}"
+            },
+            {
+              "name": "phone",
+              "value": "={{ $('Incoming Tool Request').first().json.recipient_phone }}"
+            },
+            {
+              "name": "email",
+              "value": "[EMAIL]"
+            },
+            {
+              "name": "line1",
+              "value": "={{ $('Incoming Tool Request').first().json.recipient_address }}"
+            },
+            {
+              "name": "city",
+              "value": "={{ $('Incoming Tool Request').first().json.recipient_city }}"
+            },
+            {
+              "name": "state",
+              "value": "={{ $('Incoming Tool Request').first().json.recipient_state }}"
+            },
+            {
+              "name": "country",
+              "value": "={{ $('Incoming Tool Request').first().json.recipient_country }}"
+            },
+            {
+              "name": "is_residential",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "__NODE_8__",
+      "name": "Create Delivery Address",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        832,
+        16
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1024,
+        -80
+      ],
+      "id": "__NODE_9__",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"description\": \"{{ $('Incoming Tool Request').first().json.item_name || 'Package' }} dispatch\",\n  \"weight_unit\": \"kg\",\n  \"items\": [\n    {\n      \"name\": \"{{ $('Incoming Tool Request').first().json.item_name }}\",\n      \"description\": \"{{ $('Incoming Tool Request').first().json.item_description }}\",\n      \"weight\": {{ $('Resolve Packaging').first().json.resolved_weight_kg }},\n      \"quantity\": 1,\n      \"value\": {{ $('Incoming Tool Request').first().json.item_value || 1000 }},\n      \"currency\": \"NGN\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "__NODE_10__",
+      "name": "Create Parcel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1408,
+        -80
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"address_from\": \"{{ $('Create Pickup Address').first().json.data.address_id }}\",\n  \"address_to\": \"{{ $('Create Delivery Address').first().json.data.address_id }}\",\n  \"parcel\": \"{{ $('Create Parcel').first().json.data.parcel_id }}\"\n}",
+        "options": {}
+      },
+      "id": "__NODE_11__",
+      "name": "Create Shipment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        -80
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ '[URL]' + $('Create Shipment').first().json.data.shipment_id + '&currency=NGN&cash_on_delivery=true' }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "options": {}
+      },
+      "id": "__NODE_12__",
+      "name": "Get Rates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1792,
+        -80
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "msq_dispatch_orders",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $('Incoming Tool Request').first().json.tenant_id }}",
+            "business_id": "REDACTED",
+            "shipment_id": "={{ $('Create Shipment').first().json.data.shipment_id }}",
+            "status": "draft",
+            "payment_status": "pending",
+            "pickup_address": "={{ JSON.stringify({ name: $('Incoming Tool Request').first().json.sender_name, phone: $('Incoming Tool Request').first().json.sender_phone, address: $('Incoming Tool Request').first().json.sender_address, city: $('Incoming Tool Request').first().json.sender_city, state: $('Incoming Tool Request').first().json.sender_state, country: $('Incoming Tool Request').first().json.sender_country }) }}",
+            "delivery_address": "={{ JSON.stringify({ name: $('Incoming Tool Request').first().json.recipient_name, phone: $('Incoming Tool Request').first().json.recipient_phone, address: $('Incoming Tool Request').first().json.recipient_address, city: $('Incoming Tool Request').first().json.recipient_city, state: $('Incoming Tool Request').first().json.recipient_state, country: $('Incoming Tool Request').first().json.recipient_country }) }}",
+            "parcel_info": "={{ JSON.stringify({ item_name: $('Incoming Tool Request').first().json.item_name, description: $('Incoming Tool Request').first().json.item_description, weight_kg: $('Incoming Tool Request').first().json.item_weight_kg, order_number: $('Incoming Tool Request').first().json.order_number || null}) }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "type": "string",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "business_id",
+              "displayName": "business_id",
+              "type": "string",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "shipment_id",
+              "displayName": "shipment_id",
+              "type": "string",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "payment_status",
+              "displayName": "payment_status",
+              "type": "string",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "pickup_address",
+              "displayName": "pickup_address",
+              "type": "string",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "delivery_address",
+              "displayName": "delivery_address",
+              "type": "string",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "parcel_info",
+              "displayName": "parcel_info",
+              "type": "string",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "__NODE_13__",
+      "name": "Save Draft Order",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1984,
+        -80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const shipment = $('Create Shipment').first().json.data;\nconst rates = $('Get Rates').first().json.data || [];\nconst order = $('Save Draft Order').first().json;\n\nconst formattedRates = rates.map(r => ({\n  rate_id: r.rate_id,\n  carrier: r.carrier_name,\n  carrier_logo: r.carrier_logo || null,\n  amount: r.amount,\n  delivery_time: r.delivery_time || r.estimated_days || 'N/A',\n  pickup_time: r.pickup_time || 'N/A',\n  cod_available: r.cash_on_delivery || false\n}));\n\nreturn [{\n  json: {\n    success: true,\n    shipment_id: shipment.shipment_id,\n    order_id: order.id,\n    rates: formattedRates,\n    message: formattedRates.length > 0\n      ? `Found ${formattedRates.length} delivery option(s).`\n      : 'No carriers available for this route. Try adjusting the addresses.'\n  }\n}];"
+      },
+      "id": "__NODE_14__",
+      "name": "Format Quotes Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2176,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM table_4\ncolumn_1 $1\n  column_2 $2::uuid\nLIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [   $('Incoming Tool Request').first().json.shipment_id,   $('Incoming Tool Request').first().json.business_id ] }}"
+        }
+      },
+      "id": "__NODE_15__",
+      "name": "Lookup Order",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        832,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1024,
+        400
+      ],
+      "id": "__NODE_16__",
+      "name": "Confirm Order Found?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const order = $input.first()?.json ?? {};\nconst input = $('Incoming Tool Request').first().json;\n\nif (!order.id) {\n  return [{\n    json: {\n      success: false,\n      error: 'order_not_found',\n      shipment_id: input.shipment_id || null,\n      message: input.shipment_id\n        ? 'No dispatch order found for this user and shipment.'\n        : 'No dispatch order found for this user.'\n    }\n  }];\n}\n\nreturn [{ json: order }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        496
+      ],
+      "id": "__NODE_17__",
+      "name": "Return no order found1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-speedy",
+              "leftValue": "={{ $('Incoming Tool Request').first().json.payment_method }}",
+              "rightValue": "speedy",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "__NODE_18__",
+      "name": "Is Speedy Payment?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1216,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT phone_no FROM table_5 column_3 $1::uuid",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Tool Request').first().json.tenant_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1408,
+        208
+      ],
+      "id": "__NODE_19__",
+      "name": "Fetch Owner Phone",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const order = $input.first()?.json ?? {};\nconst input = $('Incoming Tool Request').first().json;\n\nif (!order.id) {\n  return [{\n    json: {\n      success: false,\n      error: 'order_not_found',\n      shipment_id: input.shipment_id || null,\n      message: 'No dispatch order found for this user and shipment.'\n    }\n  }];\n}\n\nconst pickupAddress = typeof order.pickup_address === 'string'\n  ? JSON.parse(order.pickup_address)\n  : order.pickup_address || {};\n\nreturn [{\n  json: {\n    ...order,\n    pickup_phone: pickupAddress.phone || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        208
+      ],
+      "id": "__NODE_20__",
+      "name": "Parse Lookup Order"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "UO0aVWbpZKpAlfc8",
+          "mode": "list",
+          "cachedResultName": "Speedy Sub workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message": "=Pay \u20a6{{ $('Incoming Tool Request').first().json.amount }} for dispatch delivery {{ $('Incoming Tool Request').first().json.shipment_id }}",
+            "phonenumber": "REDACTED"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "message",
+              "displayName": "message",
+              "type": "string",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "phonenumber",
+              "displayName": "phonenumber",
+              "type": "string",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "type": "string",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "__NODE_21__",
+      "name": "Call Speedy for Payment",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1792,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-speedy-fail",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "cond-speedy-error",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "__NODE_22__",
+      "name": "Speedy Payment OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1984,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    success: false,\n    error: 'speedy_payment_failed',\n    message: 'Speedy wallet payment failed. User can retry or switch to cash on delivery (COD).',\n    shipment_id: $('Incoming Tool Request').first().json.shipment_id\n  }\n}];"
+      },
+      "id": "__NODE_23__",
+      "name": "Speedy Payment Failed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2176,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "rate_id",
+              "value": "={{ $('Incoming Tool Request').first().json.rate_id }}"
+            },
+            {
+              "name": "shipment_id",
+              "value": "={{ $('Incoming Tool Request').first().json.shipment_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "__NODE_24__",
+      "name": "Arrange Pickup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1408,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $json.customer_chat_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1984,
+        400
+      ],
+      "id": "__NODE_25__",
+      "name": "Has Customers?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.customer_chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ 'Great news! Your order has been dispatched \ud83d\ude9a' + ($('Finalize Dispatch Confirmation').first().json.tracking_number ? ' Tracking: ' + $('Finalize Dispatch Confirmation').first().json.tracking_number : ' Tracking details will be sent shortly.') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2176,
+        400
+      ],
+      "id": "__NODE_26__",
+      "name": "Notify Customer of Dispatch"
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $('Finalize Dispatch Confirmation').first().json || {};\nconst pickup = $('Arrange Pickup').first().json.data || {};\nconst input = $('Incoming Tool Request').first().json || {};\n\nreturn [{\n  json: {\n    success: true,\n    partial: false,\n    shipment_id: result.shipment_id || input.shipment_id || null,\n    order_number: result.order_number || input.order_number || null,\n    carrier: result.carrier_name || pickup.carrier_name || 'Assigned carrier',\n    amount: result.amount ?? pickup.amount ?? input.amount ?? null,\n    tracking_number: result.tracking_number || pickup.tracking_number || null,\n    tracking_url: result.tracking_url || pickup.tracking_url || null,\n    pickup_time: pickup.pickup_time || pickup.pickup_eta || 'Will be communicated by carrier',\n    delivery_time: pickup.delivery_time || pickup.delivery_eta || 'See tracking for updates',\n    payment_method: input.payment_method || null,\n    status: 'confirmed',\n    customer_order_updated: result.customer_order_updated === true,\n    message: 'Dispatch confirmed! Carrier will pick up the package.'\n  }\n}];"
+      },
+      "id": "__NODE_27__",
+      "name": "Format Confirm Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2368,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-has-shipment",
+              "leftValue": "={{ $json.shipment_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "__NODE_28__",
+      "name": "Has Shipment ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        832,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM table_4\ncolumn_1 $1\n  column_2 $2::uuid\nLIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [  $('Incoming Tool Request').first().json.shipment_id,  $('Incoming Tool Request').first().json.business_id] }}"
+        }
+      },
+      "id": "__NODE_29__",
+      "name": "Get Order from table_3",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1024,
+        816
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "REDACTED_OPAQUE_TOKEN",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1216,
+        816
+      ],
+      "id": "__NODE_30__",
+      "name": "Track Order Found?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const order = $input.first()?.json ?? {};\nconst input = $('Incoming Tool Request').first().json;\n\nif (!order.id) {\n  return [{\n    json: {\n      success: false,\n      error: 'order_not_found',\n      shipment_id: input.shipment_id || null,\n      message: input.shipment_id\n        ? 'No dispatch order found for this user and shipment.'\n        : 'No dispatch order found for this user.'\n    }\n  }];\n}\n\nreturn [{ json: order }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1408,
+        1008
+      ],
+      "id": "__NODE_31__",
+      "name": "Return no order found"
+    },
+    {
+      "parameters": {
+        "url": "=[URL] $('Incoming Tool Request').first().json.shipment_id }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "options": {}
+      },
+      "id": "__NODE_32__",
+      "name": "Get Shipment Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1408,
+        816
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "msq_dispatch_orders",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Get Order from table_3').first().json.id }}",
+            "status": "={{ $('Get Shipment Status').first().json.data.status || $('Get Order from table_3').first().json.status }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "__NODE_33__",
+      "name": "Sync Status to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1600,
+        816
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const terminal = $('Get Shipment Status').first().json.data || {};\nconst local    = $('Get Order from table_3').first().json || {};\n\nreturn [{\n  json: {\n    success:         true,\n    shipment_id:     local.shipment_id,\n    carrier:         local.carrier_name       || terminal.carrier_name    || 'N/A',\n    status:          terminal.status          || local.status,\n    tracking_number: local.tracking_number    || terminal.tracking_number || null,\n    tracking_url:    local.tracking_url       || terminal.tracking_url    || null,\n    amount:          local.amount,\n    payment_method:  local.payment_method,\n    events:          terminal.events          || terminal.tracking_events || [],\n    last_updated:    terminal.updated_at      || local.updated_at,\n    pickup_address:  local.pickup_address,\n    delivery_address: local.delivery_address\n  }\n}];"
+      },
+      "id": "__NODE_34__",
+      "name": "Format Track Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        816
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, shipment_id, carrier_name, status, payment_status,\n       payment_method, amount, tracking_number, tracking_url,\n       delivery_address, created_at\nFROM table_4\ncolumn_2 $1::uuid\nORDER BY created_at DESC\nLIMIT 10",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Tool Request').first().json.business_id] }}"
+        }
+      },
+      "id": "__NODE_35__",
+      "name": "List Recent Orders",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1024,
+        1008
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const orders = $('List Recent Orders').all().map(item => {\n  const o = item.json;\n  return {\n    shipment_id:     o.shipment_id,\n    carrier:         o.carrier_name || 'Pending',\n    status:          o.status,\n    amount:          o.amount,\n    payment:         o.payment_method || 'N/A',\n    tracking_number: o.tracking_number || null,\n    destination:     o.delivery_address\n      ? (typeof o.delivery_address === 'string'\n          ? JSON.parse(o.delivery_address)\n          : o.delivery_address).city\n      : 'N/A',\n    date: o.created_at\n  };\n});\n\nreturn [{\n  json: {\n    success: true,\n    total:   orders.length,\n    orders:  orders,\n    message: orders.length > 0\n      ? `Found ${orders.length} recent dispatch order(s).`\n      : 'No dispatch orders found. User has not made any deliveries yet.'\n  }\n}];"
+      },
+      "id": "__NODE_36__",
+      "name": "Format Orders List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// \u2500\u2500 Packaging auto-selection based on item weight \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n//\n// Three packaging types pre-created on Terminal Africa account:\n//   Soft Package  \u2192 envelopes, fliers, soft pouches   (< 0.5 kg)\n//   Standard Box  \u2192 Terminal default, most shipments  (0.5 \u2013 5 kg)\n//   Large Box     \u2192 bulky / heavy items               (> 5 kg)\n//\n// TO SET UP:\n//   1. Log into Terminal Africa dashboard\n//   2. Go to Settings \u2192 Packaging\n//   3. Create the three packaging entries below (or use existing ones)\n//   4. Replace the packaging_id values with your actual IDs\n//   5. The Terminal default box ID is PA-PT95DUJGH8FRKSO0 \u2014 use that\n//      for STANDARD_BOX if you haven't created your own yet\n\nconst PACKAGING = {\n  soft:     'PA-SOFT_PACKAGING_ID',      // < 0.5 kg  \u2014 envelope / flier\n  standard: 'PA-PT95DUJGH8FRKSO0',      // 0.5\u20135 kg  \u2014 Terminal default box\n  large:    'PA-LARGE_BOX_ID'           // > 5 kg    \u2014 large box\n};\n\nconst input    = $('Incoming Tool Request').first().json;\nconst weightKg = parseFloat(input.item_weight_kg) || 1;\n\nlet packagingId;\nif (weightKg < 0.5) {\n  packagingId = PACKAGING.soft;\n} else if (weightKg <= 5) {\n  packagingId = PACKAGING.standard;\n} else {\n  packagingId = PACKAGING.large;\n}\n\n// Pass through all original fields plus resolved packaging ID\nreturn [{\n  json: {\n    ...input,\n    resolved_packaging_id: packagingId,\n    resolved_weight_kg:    weightKg\n  }\n}];"
+      },
+      "id": "__NODE_37__",
+      "name": "Resolve Packaging",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH dispatch_update table_6 (\n  UPDATE table_4\n  column_4 'confirmed',\n    payment_status = CASE WHEN $3 = 'cod' THEN 'cod' ELSE 'paid' END,\n    payment_method = $3,\n    carrier_name = COALESCE(NULLIF($4, ''), carrier_name),\n    amount = COALESCE($5::numeric, amount),\n    tracking_number = COALESCE(NULLIF($6, ''), tracking_number),\n    tracking_url = COALESCE(NULLIF($7, ''), tracking_url),\n    updated_at = NOW()\n  column_3 $1::uuid\n  RETURNING\n    id,\n    business_id,\n    shipment_id,\n    parcel_info,\n    carrier_name,\n    amount,\n    tracking_number,\n    tracking_url\n),\nresolved_order AS (\n  SELECT\n    du.*,\n    COALESCE(\n      NULLIF($2, ''),\n      du.parcel_info->>'order_number'\n    ) AS order_number\n  FROM table_7 du\n),\ncustomer_update table_6 (\n  UPDATE table_8 co\n  column_4 'dispatched',\n    dispatch_shipment_id = ro.shipment_id,\n    updated_at = NOW()\n  FROM table_9 ro\n  WHERE co.business_id = ro.business_id\n    AND co.order_number = ro.order_number\n  RETURNING\n    co.order_number,\n    co.customer_chat_id,\n    co.business_id,\n    co.dispatch_shipment_id\n)\nSELECT\n  ro.shipment_id,\n  ro.order_number,\n  ro.carrier_name,\n  ro.amount,\n  ro.tracking_number,\n  ro.tracking_url,\n  cu.customer_chat_id,\n  pi.access_token AS bot_token,\n  CASE WHEN cu.order_number IS NOT NULL THEN true ELSE false END AS customer_order_updated\nFROM table_9 ro\nLEFT JOIN table_10 cu ON true\nLEFT JOIN table_11 pi\n  ON pi.business_id = COALESCE(cu.business_id, ro.business_id)\n AND pi.platform = 'telegram'\nLIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [ $('Lookup Order').first().json.id, $('Incoming Tool Request').first().json.order_number || '', $('Incoming Tool Request').first().json.payment_method, $('Arrange Pickup').first().json.data.carrier_name || '', $('Arrange Pickup').first().json.data.amount || $('Incoming Tool Request').first().json.amount || null, $('Arrange Pickup').first().json.data.tracking_number || '', $('Arrange Pickup').first().json.data.tracking_url || '' ] }}"
+        }
+      },
+      "id": "__NODE_38__",
+      "name": "Finalize Dispatch Confirmation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1600,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "linked-order-updated",
+              "leftValue": "={{ $json.customer_order_updated }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "__NODE_39__",
+      "name": "Linked Customer Order?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1792,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $('Finalize Dispatch Confirmation').first().json || {};\nconst input = $('Incoming Tool Request').first().json || {};\n\nreturn [{\n  json: {\n    success: true,\n    partial: true,\n    warning: 'customer_order_not_linked',\n    shipment_id: result.shipment_id || input.shipment_id || null,\n    order_number: result.order_number || input.order_number || null,\n    carrier: result.carrier_name || 'Assigned carrier',\n    amount: result.amount ?? input.amount ?? null,\n    tracking_number: result.tracking_number || null,\n    tracking_url: result.tracking_url || null,\n    payment_method: input.payment_method || null,\n    status: 'confirmed',\n    customer_order_updated: false,\n    message: 'Dispatch was confirmed with the courier, but I could not link it back to a customer order. Please verify the order number for this shipment.'\n  }\n}];"
+      },
+      "id": "__NODE_40__",
+      "name": "Return Unlinked Dispatch Warning",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1984,
+        576
+      ]
+    }
+  ],
+  "connections": {
+    "Incoming Tool Request": {
+      "main": [
+        [
+          {
+            "node": "Route Tool",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Tool": {
+      "main": [
+        [
+          {
+            "node": "Create Pickup Address",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Delivery Address",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lookup Order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Shipment ID?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Pickup Address": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Delivery Address": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Resolve Packaging",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Parcel": {
+      "main": [
+        [
+          {
+            "node": "Create Shipment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Shipment": {
+      "main": [
+        [
+          {
+            "node": "Get Rates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Rates": {
+      "main": [
+        [
+          {
+            "node": "Save Draft Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Draft Order": {
+      "main": [
+        [
+          {
+            "node": "Format Quotes Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Order": {
+      "main": [
+        [
+          {
+            "node": "Confirm Order Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm Order Found?": {
+      "main": [
+        [
+          {
+            "node": "Is Speedy Payment?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return no order found1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Speedy Payment?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Owner Phone",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Arrange Pickup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Owner Phone": {
+      "main": [
+        [
+          {
+            "node": "Parse Lookup Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Lookup Order": {
+      "main": [
+        [
+          {
+            "node": "Call Speedy for Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Speedy for Payment": {
+      "main": [
+        [
+          {
+            "node": "Speedy Payment OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Speedy Payment OK?": {
+      "main": [
+        [
+          {
+            "node": "Speedy Payment Failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Arrange Pickup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Arrange Pickup": {
+      "main": [
+        [
+          {
+            "node": "Finalize Dispatch Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Linked Customer Order?": {
+      "main": [
+        [
+          {
+            "node": "Has Customers?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Unlinked Dispatch Warning",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Customers?": {
+      "main": [
+        [
+          {
+            "node": "Notify Customer of Dispatch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Confirm Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Customer of Dispatch": {
+      "main": [
+        [
+          {
+            "node": "Format Confirm Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Shipment ID?": {
+      "main": [
+        [
+          {
+            "node": "Get Order from DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "List Recent Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Order from DB": {
+      "main": [
+        [
+          {
+            "node": "Track Order Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Track Order Found?": {
+      "main": [
+        [
+          {
+            "node": "Get Shipment Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return no order found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Shipment Status": {
+      "main": [
+        [
+          {
+            "node": "Sync Status to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sync Status to DB": {
+      "main": [
+        [
+          {
+            "node": "Format Track Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Packaging": {
+      "main": [
+        [
+          {
+            "node": "Create Parcel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Recent Orders": {
+      "main": [
+        [
+          {
+            "node": "Format Orders List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Dispatch Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Linked Customer Order?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "57650943-2044-49e3-ae84-cacf70b44d02",
+  "versionCounter": 588,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-14T16:07:59.826Z",
+      "createdAt": "2026-04-14T16:07:59.826Z",
+      "role": "workflow:owner",
+      "workflowId": "Bmg4daf9rCUyaYo8",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 57650943",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:22.047957+00:00",
+    "original_name": "Terminal Africa Dispatch Tools",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "updated_at": "table_1",
+      "ON": "table_2",
+      "DB": "table_3",
+      "msq_dispatch_orders": "table_4",
+      "msq_tenants": "table_5",
+      "AS": "table_6",
+      "dispatch_update": "table_7",
+      "msq_customer_orders": "table_8",
+      "resolved_order": "table_9",
+      "customer_update": "table_10",
+      "msq_platform_integrations": "table_11"
+    },
+    "columns_renamed": {
+      "shipment_id": "column_1",
+      "business_id": "column_2",
+      "id": "column_3",
+      "status": "column_4"
+    }
+  }
+}

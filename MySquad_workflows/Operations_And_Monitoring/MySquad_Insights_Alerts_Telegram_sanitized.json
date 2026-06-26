@@ -1,0 +1,922 @@
+{
+  "updatedAt": "2026-05-12T09:11:56.964Z",
+  "createdAt": "2026-04-28T21:53:41.094Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Insights Alerts Telegram",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "__NODE_1__",
+      "name": "Loop Over Tenants",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        432,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH active_customers AS (\n  SELECT\n    c.display_name,\n    c.username,\n    c.message_count,\n    c.last_seen_at\n  FROM table_1 c\n  WHERE c.business_id = $1::uuid\n    AND c.last_seen_at > now() - interval '24 hours'\n  ORDER BY c.last_seen_at DESC\n),\nrecent_orders AS (\n  SELECT\n    co.order_number,\n    co.items,\n    co.total_amount,\n    co.status,\n    co.payment_status,\n    co.delivery_type,\n    co.created_at\n  FROM table_2 co\n  WHERE co.business_id = $1::uuid\n    AND co.created_at > now() - interval '24 hours'\n  ORDER BY co.created_at DESC\n),\ndaily_revenue AS (\n  SELECT COALESCE(SUM(total_amount), 0) AS total\n  FROM table_2\n  column_1 $1::uuid\n    column_2 now() - interval '24 hours'\n    AND status NOT IN ('cancelled')\n),\npending_payments AS (\n  SELECT count(*) AS cnt\n  FROM table_2\n  column_1 $1::uuid\n    AND payment_status IN ('unpaid', 'proof_submitted')\n    AND status NOT IN ('cancelled', 'delivered')\n),\ndaily_credits AS (\n  -- Credits are per TENANT not per business\n  SELECT\n    action_type,\n    SUM(credits_used) AS naira_spent\n  FROM table_3\n  column_3 $2::uuid\n    column_2 now() - interval '24 hours'\n    column_4 0\n  GROUP BY action_type\n  ORDER BY naira_spent DESC\n),\nappointment_count AS (\n  SELECT COUNT(*) AS cnt\n  FROM table_2\n  column_1 $1::uuid\n    column_2 now() - interval '24 hours'\n    column_5 'appointment'\n),\nproduct_order_count AS (\n  SELECT COUNT(*) AS cnt\n  FROM table_2\n  column_1 $1::uuid\n    column_2 now() - interval '24 hours'\n    column_5= 'appointment'\n),\nchat_samples AS (\n  -- Chat history is tenant-scoped\n  SELECT\n    message->>'type' AS msg_type,\n    message->'data'->>'content' AS content\n  FROM table_4\n  WHERE session_id LIKE 'cust_%_' || $2::text\n  ORDER BY id DESC\n  LIMIT 30\n)\nSELECT\n  (SELECT json_agg(row_to_json(ac)) FROM table_5 ac) AS customers,\n  (SELECT json_agg(row_to_json(ro)) FROM table_6 ro)    AS orders,\n  (SELECT json_agg(row_to_json(cs)) FROM table_7 cs)     AS chats,\n  (SELECT json_agg(row_to_json(dc)) FROM table_8 dc)    AS credit_usage,\n  (SELECT count(*) FROM table_5)                     AS customer_count,\n  (SELECT count(*) FROM table_6)                        AS order_count,\n  (SELECT total FROM table_9)                           AS daily_revenue,\n  (SELECT cnt FROM table_10)                          AS pending_payment_count,\n  (SELECT cnt FROM table_11)                         AS appointment_count,\n  (SELECT cnt FROM table_12)                       AS product_order_count",
+        "options": {
+          "queryReplacement": "={{ [$json.business_id, $json.tenant_id] }}"
+        }
+      },
+      "id": "__NODE_2__",
+      "name": "Load Daily Activity",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        656,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-customers",
+              "leftValue": "={{ $json.customer_count }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "has-orders",
+              "leftValue": "={{ $json.order_count }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "__NODE_3__",
+      "name": "Has Activity?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const tenant = $('Loop Over Tenants').first().json;\nconst activity = $('Load Daily Activity').first().json;\n\nconst customers = activity.customers || [];\nconst orders = activity.orders || [];\nconst chats = activity.chats || [];\nconst creditUsage = activity.credit_usage || [];\nconst customerCount = parseInt(activity.customer_count) || 0;\nconst orderCount = parseInt(activity.order_count) || 0;\nconst pendingPaymentCount = parseInt(activity.pending_payment_count) || 0;\nconst dailyRevenue = Number(activity.daily_revenue || 0);\nconst appointmentCount = parseInt(activity.appointment_count) || 0;\nconst productOrderCount = parseInt(activity.product_order_count) || 0;\n\nconst businessMode = tenant.business_mode || 'product_only';\nconst isService = businessMode === 'service_only';\nconst isHybrid = businessMode === 'hybrid_product_led' || businessMode === 'hybrid_service_led';\nconst orderLabel = isService ? 'booking' : 'order';\nconst ordersLabel = isService ? 'bookings' : 'orders';\n\nlet customerList = 'None';\nif (customers.length > 0) {\n  customerList = customers.map(c => c.display_name || c.username || 'Unknown').join(', ');\n}\n\nlet orderSummary = 'No new ' + ordersLabel;\nif (orders.length > 0) {\n  orderSummary = orders.map(o => {\n    const type = o.delivery_type === 'appointment' ? ' \ud83d\udcc5' : '';\n    const payNote = o.payment_status === 'proof_submitted' ? ' \u23f3 proof sent' :\n                    o.payment_status === 'unpaid' ? ' \ud83d\udcb3 payment pending' : '';\n    return o.order_number + type + ' \u2014 \u20a6' + Number(o.total_amount || 0).toLocaleString() + ' (' + o.status + ')' + payNote;\n  }).join('\\n');\n}\n\nlet chatSnippets = 'No messages';\nif (chats && chats.length > 0) {\n  const humanMessages = chats.filter(c => c.msg_type === 'human');\n  if (humanMessages.length > 0) {\n    chatSnippets = humanMessages.slice(0, 10).map(c => '- ' + (c.content || '').substring(0, 100)).join('\\n');\n  }\n}\n\nlet creditSummary = 'No AI activity charged yesterday';\nif (creditUsage.length > 0) {\n  const totalSpent = creditUsage.reduce((sum, c) => sum + Number(c.naira_spent || 0), 0);\n  const labelMap = {\n    input_text: 'text messages', input_audio: 'voice notes',\n    input_image: 'images received', input_file: 'files received',\n    output_voice: 'voice replies', output_image: 'images generated', output_video: 'videos generated'\n  };\n  const breakdown = creditUsage.map(c => '\u20a6' + Number(c.naira_spent).toLocaleString() + ' on ' + (labelMap[c.action_type] || c.action_type)).join(', ');\n  creditSummary = '\u20a6' + totalSpent.toLocaleString() + ' total (' + breakdown + ')';\n}\n\nlet splitNote = '';\nif (isHybrid && (appointmentCount > 0 || productOrderCount > 0)) {\n  splitNote = appointmentCount + ' appointment(s), ' + productOrderCount + ' product order(s)\\n';\n}\n\nconst llmPrompt =\n  'You are ' + tenant.agent_name + ', the AI business agent for ' + tenant.business_name + '.\\n' +\n  'Write a SHORT, warm morning briefing directly to your owner. Max 10 lines.\\n\\n' +\n  'STRICT VOICE RULES:\\n' +\n  '- Write in first person: \"I had 3 customers yesterday\"\\n' +\n  '- Never refer to yourself by name in the body \u2014 sign off at the very end only\\n' +\n  '- Use Telegram Markdown V1: *bold* for numbers (single asterisk ONLY \u2014 never double)\\n\\n' +\n  'STATS:\\n' +\n  '- Customers who chatted yesterday: ' + customerCount + '\\n' +\n  '- New ' + ordersLabel + ' yesterday: ' + orderCount + '\\n' +\n  (splitNote ? '- Breakdown: ' + splitNote : '') +\n  '- Total revenue yesterday: \u20a6' + dailyRevenue.toLocaleString() + '\\n' +\n  '- ' + ordersLabel + ' awaiting payment confirmation: ' + pendingPaymentCount + '\\n' +\n  '- Naira spent on AI yesterday: ' + creditSummary + '\\n\\n' +\n  'CUSTOMERS WHO CHATTED:\\n' + customerList + '\\n\\n' +\n  (isService ? 'BOOKINGS YESTERDAY:\\n' : 'ORDERS YESTERDAY:\\n') + orderSummary + '\\n\\n' +\n  'SAMPLE CUSTOMER MESSAGES (infer intent):\\n' + chatSnippets + '\\n\\n' +\n  'Include in briefing:\\n' +\n  '1. How many customers chatted yesterday and what they were mostly asking about\\n' +\n  '2. New ' + ordersLabel + ' and total revenue from table_13\\n' +\n  '3. Customer names\\n' +\n  (pendingPaymentCount > 0 ? '4. Flag clearly: *' + pendingPaymentCount + '* ' + orderLabel + '(s) need your confirmation today \u2014 lead with this if count > 0\\n' : '4. If no pending items, end with a light encouragement to check in or share their agent link\\n') +\n  '5. Naira spent on AI yesterday (one brief line)\\n' +\n  '\\nFrame everything as \"here is what needs you today\" not \"here is what happened yesterday\". Morning energy \u2014 make the owner want to open the bot.\\n' +\n  'End with a short encouraging line. Sign off: \u2014 ' + tenant.agent_name;\n\nreturn {\n  json: {\n    tenant_id: tenant.tenant_id,\n    owner_telegram_id: tenant.owner_telegram_id,\n    bot_token: tenant.bot_token,\n    business_name: tenant.business_name,\n    agent_name: tenant.agent_name,\n    preferred_name: tenant.preferred_name || tenant.full_name || 'Boss',\n    llm_prompt: llmPrompt,\n    customer_count: customerCount,\n    order_count: orderCount,\n    pending_payment_count: pendingPaymentCount,\n    daily_revenue: dailyRevenue\n  }\n};"
+      },
+      "id": "__NODE_4__",
+      "name": "Build Summary Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You generate concise daily business summaries for Nigerian business owners. Be warm and encouraging. Use Telegram Markdown V1 *bold* formatting \u2014 single asterisk only, never double. Keep it to 8-10 lines max.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.llm_prompt) }}\n    }\n  ],\n  \"temperature\": 0.7,\n  \"max_tokens\": 500\n}",
+        "options": {}
+      },
+      "id": "__NODE_5__",
+      "name": "Generate Summary via Groq",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1776,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Build Summary Prompt').first().json;\nconst groqResponse = $json;\n\nlet summary = '';\ntry {\n  summary = groqResponse.choices[0].message.content || 'No summary generated.';\n} catch(e) {\n  summary = '*' + prev.customer_count + '* customers chatted yesterday.\\n' +\n    '*' + prev.order_count + '* new orders received.\\n' +\n    (prev.pending_payment_count > 0 ? '\\n\u26a0\ufe0f *' + prev.pending_payment_count + '* order(s) need your confirmation today.\\n' : '') +\n    '\\nHave a productive day!\\n\\n\u2014 ' + prev.agent_name;\n}\n\nconst greeting = 'Morning ' + prev.preferred_name + '! \u2600\ufe0f\\n\\n';\n\nreturn {\n  json: {\n    text: greeting + summary,\n    chat_id: String(prev.owner_telegram_id),\n    bot_token: prev.bot_token\n  }\n};"
+      },
+      "id": "__NODE_6__",
+      "name": "Format Summary Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "id": "__NODE_7__",
+      "name": "Send Summary to Owner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2224,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "## Daily Summaries Workflow",
+        "height": 352,
+        "width": 2720
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -320,
+        -48
+      ],
+      "typeVersion": 1,
+      "id": "__NODE_8__",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH weekly_stats AS (\n  SELECT\n    COUNT(DISTINCT c.platform_id)          AS unique_customers,\n    COUNT(DISTINCT DATE(c.last_seen_at))   AS active_days,\n    AVG(c.message_count)                   AS avg_messages_per_customer\n  FROM table_1 c\n  WHERE c.business_id = $1::uuid\n    AND c.last_seen_at > now() - interval '7 days'\n),\norder_stats AS (\n  SELECT\n    COUNT(*)                                 AS total_orders,\n    COALESCE(SUM(total_amount), 0)           AS total_revenue,\n    COALESCE(AVG(total_amount), 0)           AS avg_order_value,\n    COUNT(DISTINCT customer_chat_id)         AS ordering_customers\n  FROM table_2\n  column_1 $1::uuid\n    column_2 now() - interval '7 days'\n    AND status NOT IN ('cancelled')\n),\ntop_products AS (\n  SELECT\n    item->>'name'                            AS product_name,\n    SUM((item->>'quantity')::int)            AS qty_sold\n  FROM table_2,\n       jsonb_array_elements(items) AS item\n  column_1 $1::uuid\n    column_2 now() - interval '7 days'\n    AND status NOT IN ('cancelled')\n  GROUP BY product_name\n  ORDER BY qty_sold DESC\n  LIMIT 3\n),\nhourly_activity AS (\n  SELECT\n    EXTRACT(HOUR FROM table_14 AT TIME ZONE 'Africa/Lagos') AS hour,\n    COUNT(*)                                                     AS interactions\n  FROM table_1\n  column_1 $1::uuid\n    column_6 now() - interval '7 days'\n  GROUP BY hour\n  ORDER BY interactions DESC\n  LIMIT 1\n),\nretention AS (\n  SELECT\n    COUNT(DISTINCT CASE\n      WHEN last_seen_at > now() - interval '7 days'\n      THEN platform_id END)                  AS active_this_week,\n    COUNT(DISTINCT CASE\n      WHEN last_seen_at >  now() - interval '30 days'\n       column_6= now() - interval '7 days'\n      THEN platform_id END)                  AS active_previous_weeks\n  FROM table_1\n  column_1 $1::uuid\n),\nweekly_credits AS (\n  -- Credits are per tenant, not per business\n  SELECT\n    action_type,\n    SUM(credits_used)                        AS naira_spent\n  FROM table_3\n  column_3 $2::uuid\n    column_2 now() - interval '7 days'\n    column_4 0\n  GROUP BY action_type\n  ORDER BY naira_spent DESC\n),\nweekly_appointment_count AS (\n  SELECT COUNT(*) AS cnt\n  FROM table_2\n  column_1 $1::uuid\n    column_2 now() - interval '7 days'\n    column_5 'appointment'\n    AND status NOT IN ('cancelled')\n)\nSELECT\n  (SELECT unique_customers      FROM table_15)                    AS unique_customers,\n  (SELECT total_orders          FROM table_16)                     AS total_orders,\n  (SELECT total_revenue         FROM table_16)                     AS total_revenue,\n  (SELECT avg_order_value       FROM table_16)                     AS avg_order_value,\n  (SELECT ordering_customers    FROM table_16)                     AS ordering_customers,\n  (SELECT active_days           FROM table_15)                    AS active_days,\n  (SELECT avg_messages_per_customer FROM table_15)                AS avg_messages,\n  (SELECT json_agg(row_to_json(tp)) FROM table_17 tp)             AS top_products,\n  (SELECT hour                  FROM table_18)                 AS peak_hour,\n  (SELECT interactions          FROM table_18)                 AS peak_interactions,\n  (SELECT active_this_week      FROM table_19)                       AS active_this_week,\n  (SELECT active_previous_weeks FROM table_19)                       AS active_previous_weeks,\n  (SELECT json_agg(row_to_json(wc)) FROM table_20 wc)           AS credit_usage,\n  (SELECT cnt                   FROM table_21)        AS appointment_count",
+        "options": {
+          "queryReplacement": "={{ [$json.business_id, $json.tenant_id] }}"
+        }
+      },
+      "id": "__NODE_9__",
+      "name": "Load Weekly Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        656,
+        368
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const tenant = $('Loop Over Tenants1').first().json;\nconst stats = $('Load Weekly Stats').first().json;\n\nconst topProducts = stats.top_products || [];\nconst productList = topProducts.length > 0\n  ? topProducts.map(p => p.product_name + ' (' + p.qty_sold + ' sold)').join(', ')\n  : 'None recorded';\n\nconst creditUsage = stats.credit_usage || [];\nlet creditSummary = 'No AI usage this week';\nif (creditUsage.length > 0) {\n  const totalSpent = creditUsage.reduce((sum, c) => sum + Number(c.naira_spent || 0), 0);\n  const topItem = creditUsage[0];\n  const labelMap = {\n    input_text: 'text messages', input_audio: 'voice notes',\n    input_image: 'images received', output_voice: 'voice replies',\n    output_image: 'images generated', output_video: 'videos generated'\n  };\n  const topLabel = labelMap[topItem.action_type] || topItem.action_type;\n  creditSummary = '\u20a6' + totalSpent.toLocaleString() + ' total \u2014 most on ' + topLabel + ' (\u20a6' + Number(topItem.naira_spent).toLocaleString() + ')';\n}\n\nconst businessMode = tenant.business_mode || 'product_only';\nconst isService = businessMode === 'service_only';\nconst isHybrid = businessMode === 'hybrid_product_led' || businessMode === 'hybrid_service_led';\nconst ordersLabel = isService ? 'bookings' : 'orders';\nconst offeringsLabel = isService ? 'services' : 'products';\nconst orderLabel = isService ? 'booking' : 'order';\nconst appointmentCount = parseInt(stats.appointment_count) || 0;\n\nconst retentionRate = stats.active_previous_weeks > 0\n  ? ((stats.active_this_week / stats.active_previous_weeks) * 100).toFixed(0)\n  : 0;\n\nconst revenueFormatted = Number(stats.total_revenue || 0).toLocaleString();\nconst avgOrderFormatted = Number(stats.avg_order_value || 0).toLocaleString();\n\nconst peakHourFormatted = stats.peak_hour !== null && stats.peak_hour !== undefined\n  ? String(parseInt(stats.peak_hour)).padStart(2, '0') + ':00'\n  : null;\n\nconst llmPrompt =\n  'You are ' + tenant.agent_name + ', the AI business agent for ' + tenant.business_name + '.\\n' +\n  'Write a warm Sunday evening weekly business insights report directly to your owner. Max 12 lines.\\n\\n' +\n  'STRICT VOICE RULES:\\n' +\n  '- Write in first person: \"I saw ' + (stats.total_orders || 0) + ' ' + ordersLabel + ' this week\"\\n' +\n  '- Never refer to yourself by name in the body \u2014 sign off at the very end only\\n' +\n  '- Use Telegram Markdown V1: *bold* for numbers (single asterisk ONLY \u2014 never double)\\n\\n' +\n  'WEEKLY STATS (last 7 days):\\n' +\n  '- Unique customers: ' + (stats.unique_customers || 0) + '\\n' +\n  '- Total ' + ordersLabel + ': ' + (stats.total_orders || 0) + '\\n' +\n  (isHybrid && appointmentCount > 0 ? '- Appointments specifically: ' + appointmentCount + '\\n' : '') +\n  '- Total revenue: \u20a6' + revenueFormatted + '\\n' +\n  '- Average ' + orderLabel + ' value: \u20a6' + avgOrderFormatted + '\\n' +\n  '- Customers who ' + (isService ? 'booked' : 'ordered') + ': ' + (stats.ordering_customers || 0) + '\\n' +\n  '- Active days: ' + (stats.active_days || 0) + ' of 7\\n' +\n  '- Avg messages per customer: ' + (stats.avg_messages ? Number(stats.avg_messages).toFixed(1) : 0) + '\\n\\n' +\n  'TOP ' + offeringsLabel.toUpperCase() + ':\\n' + productList + '\\n\\n' +\n  'PEAK ACTIVITY TIME:\\n' +\n  (peakHourFormatted ? peakHourFormatted + ' Lagos time (' + stats.peak_interactions + ' interactions)' : 'Not enough data') + '\\n\\n' +\n  'CUSTOMER RETENTION:\\n' +\n  '- Active this week: ' + (stats.active_this_week || 0) + '\\n' +\n  '- Active in prior weeks: ' + (stats.active_previous_weeks || 0) + '\\n' +\n  '- Retention rate: ' + retentionRate + '%\\n\\n' +\n  'NAIRA SPENT ON AI THIS WEEK:\\n' + creditSummary + '\\n\\n' +\n  'Include in report:\\n' +\n  '1. Total ' + ordersLabel + ' and revenue\\n' +\n  '2. Top ' + offeringsLabel + ' performing this week\\n' +\n  '3. Peak hour \u2014 suggest best time to post offers or respond\\n' +\n  '4. Retention \u2014 kudos if over 50%, gentle nudge if under\\n' +\n  '5. One specific actionable tip based on the data\\n' +\n  '6. Naira spent on AI (one brief line)\\n' +\n  '\\nThis lands on Sunday evening \u2014 the owner is wrapping up the week and thinking about the week ahead. End with one forward-looking line about the coming week. Sign off: \u2014 ' + tenant.agent_name;\n\nreturn {\n  json: {\n    tenant_id: tenant.tenant_id,\n    owner_telegram_id: tenant.owner_telegram_id,\n    bot_token: tenant.bot_token,\n    business_name: tenant.business_name,\n    agent_name: tenant.agent_name,\n    preferred_name: tenant.preferred_name || tenant.full_name || 'Boss',\n    llm_prompt: llmPrompt,\n    total_orders: stats.total_orders || 0,\n    total_revenue: revenueFormatted,\n    retention_rate: retentionRate\n  }\n};"
+      },
+      "id": "__NODE_10__",
+      "name": "Build Insights Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You generate concise, warm weekly business insights for Nigerian business owners. Use Telegram Markdown V1 *bold* formatting for numbers \u2014 single asterisk only, never double. Keep it to 10-12 lines max. Be actionable and encouraging.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.llm_prompt) }}\n    }\n  ],\n  \"temperature\": 0.5,\n  \"max_tokens\": 600\n}",
+        "options": {}
+      },
+      "id": "__NODE_11__",
+      "name": "Generate Insights via Groq",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1776,
+        368
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Build Insights Prompt').first().json;\nconst groqResponse = $json;\n\nlet summary = '';\ntry {\n  summary = groqResponse.choices[0].message.content || 'No insights generated.';\n} catch(e) {\n  summary = '*' + prev.total_orders + '* ' + (prev.total_orders === 1 ? 'order' : 'orders') + ' this week. Total revenue: *\u20a6' + prev.total_revenue + '*\\nRetention: *' + prev.retention_rate + '%*\\n\\nNew week starts tomorrow \u2014 make it count!\\n\\n\u2014 ' + prev.agent_name;\n}\n\nconst greeting = 'Good evening ' + prev.preferred_name + '! \ud83c\udf19\\n\\n*Weekly Insights \u2014 ' + prev.business_name + '*\\n\\n';\n\nreturn {\n  json: {\n    text: greeting + summary,\n    chat_id: String(prev.owner_telegram_id),\n    bot_token: prev.bot_token\n  }\n};"
+      },
+      "id": "__NODE_12__",
+      "name": "Format Insights Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "id": "__NODE_13__",
+      "name": "Send Insights to Owner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2208,
+        368
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "__NODE_14__",
+      "name": "Loop Over Tenants1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        432,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-customers-weekly",
+              "leftValue": "={{ $json.unique_customers }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "has-orders-weekly",
+              "leftValue": "={{ $json.total_orders }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "__NODE_15__",
+      "name": "Has Activity?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Weekly Insights Workflow",
+        "height": 336,
+        "width": 2736,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -320,
+        320
+      ],
+      "typeVersion": 1,
+      "id": "__NODE_16__",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  t.id                         AS tenant_id,\n  bp.id                        AS business_id,\n  t.telegram_id                AS owner_telegram_id,\n  t.preferred_name,\n  t.full_name,\n  bp.business_name,\n  bp.business_mode,\n  ac.agent_name,\n  ac.tone_profile,\n  pi.access_token              AS bot_token\nFROM table_22 t\nJOIN table_23 bp\n  ON bp.tenant_id = t.id\nJOIN table_24 ac\n  ON ac.business_id = bp.id\nJOIN table_25 pi\n  ON pi.business_id = bp.id\n  AND pi.platform = 'telegram'\n  AND pi.is_active = true\nWHERE t.onboarding_completed = true\nORDER BY t.id, bp.id",
+        "options": {}
+      },
+      "id": "__NODE_17__",
+      "name": "Load Active Tenants (daily)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  t.id                         AS tenant_id,\n  bp.id                        AS business_id,\n  t.telegram_id                AS owner_telegram_id,\n  t.preferred_name,\n  t.full_name,\n  bp.business_name,\n  bp.business_mode,\n  ac.agent_name,\n  ac.tone_profile,\n  pi.access_token              AS bot_token\nFROM table_22 t\nJOIN table_23 bp\n  ON bp.tenant_id = t.id\nJOIN table_24 ac\n  ON ac.business_id = bp.id\nJOIN table_25 pi\n  ON pi.business_id = bp.id\n  AND pi.platform = 'telegram'\n  AND pi.is_active = true\nWHERE t.onboarding_completed = true\nORDER BY t.id, bp.id",
+        "options": {}
+      },
+      "id": "__NODE_18__",
+      "name": "Load Active Tenants (weekly)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        368
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const tenant = $('Loop Over Tenants').first().json;\nconst name   = tenant.preferred_name || tenant.full_name || 'Boss';\nconst agent  = tenant.agent_name || 'MyGuy';\nconst biz    = tenant.business_name || 'your business';\n\n// Pick a random encouragement so it doesn't feel canned\nconst tips = [\n  'Try sharing your agent link with a few customers today \u2014 even one new chat can start a streak.',\n  'A good time to update table_26 catalogue or add new items so customers always see fresh offerings.',\n  'Consider dropping your agent link in a WhatsApp status or Instagram story today.',\n  'Sometimes the quiet days are when you prep \u2014 update table_26 pricelist or add a promo offer.',\n  'No pressure, but sharing your bot link to one group today could bring in your first chat tomorrow.'\n];\nconst tip = tips[Math.floor(Math.random() * tips.length)];\n\nconst text =\n  'Morning ' + name + '! \u2600\ufe0f\\n\\n' +\n  'Quiet one yesterday for *' + biz + '* \u2014 no customer chats or orders came in.\\n\\n' +\n  '\ud83d\udca1 ' + tip + '\\n\\n' +\n  'Your agent is live and ready the moment a customer reaches out. Have a great day! \ud83d\ude80\\n\\n' +\n  '\u2014 ' + agent;\n\nreturn {\n  json: {\n    text,\n    chat_id:   String(tenant.owner_telegram_id),\n    bot_token: tenant.bot_token\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        96
+      ],
+      "id": "__NODE_19__",
+      "name": "Build No-Activity Message (Daily)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "id": "__NODE_20__",
+      "name": "Send No-Activity Message (Daily)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        96
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const tenant = $('Loop Over Tenants1').first().json;\nconst name   = tenant.preferred_name || tenant.full_name || 'Boss';\nconst agent  = tenant.agent_name || 'MyGuy';\nconst biz    = tenant.business_name || 'your business';\n\nconst tips = [\n  'This week could be the week you get your first order \u2014 share your agent link somewhere new tomorrow.',\n  'A good moment to freshen up your catalogue with new prices or items before the week picks up.',\n  'Try sharing your bot link in a customer group or on your Instagram story this week.',\n  'Even one new customer chat this week builds momentum. Your link is your storefront.',\n  'Consider updating your business description or adding product photos \u2014 it helps customers trust faster.'\n];\nconst tip = tips[Math.floor(Math.random() * tips.length)];\n\nconst text =\n  'Good evening ' + name + '! \ud83c\udf19\\n\\n' +\n  '*Weekly Insights \u2014 ' + biz + '*\\n\\n' +\n  'Quiet week for *' + biz + '* \u2014 no customer activity recorded.\\n\\n' +\n  '\ud83d\udca1 ' + tip + '\\n\\n' +\n  'Every business has slow periods. Your agent is live and ready \u2014 ' +\n  'the moment a customer arrives, you\\'ll be the first to know. ' +\n  'New week starts tomorrow \u2014 make it count! \ud83d\ude80\\n\\n' +\n  '\u2014 ' + agent;\n\nreturn {\n  json: {\n    text,\n    chat_id:   String(tenant.owner_telegram_id),\n    bot_token: tenant.bot_token\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        448
+      ],
+      "id": "__NODE_21__",
+      "name": "Build No-Activity Message (Weekly)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "id": "__NODE_22__",
+      "name": "Send No-Activity Message (Weekly)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        448
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "id": "__NODE_23__",
+      "name": "Daily 7am Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 19
+            }
+          ]
+        }
+      },
+      "id": "__NODE_24__",
+      "name": "Weekly Sunday 7pm Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        368
+      ]
+    }
+  ],
+  "connections": {
+    "Loop Over Tenants": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Load Daily Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Daily Activity": {
+      "main": [
+        [
+          {
+            "node": "Has Activity?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Activity?": {
+      "main": [
+        [
+          {
+            "node": "Build Summary Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build No-Activity Message (Daily)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary via Groq",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary via Groq": {
+      "main": [
+        [
+          {
+            "node": "Format Summary Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Summary Message": {
+      "main": [
+        [
+          {
+            "node": "Send Summary to Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Summary to Owner": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Tenants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Weekly Stats": {
+      "main": [
+        [
+          {
+            "node": "Has Activity?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Insights Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Insights via Groq",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Insights via Groq": {
+      "main": [
+        [
+          {
+            "node": "Format Insights Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Insights Message": {
+      "main": [
+        [
+          {
+            "node": "Send Insights to Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Insights to Owner": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Tenants1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Tenants1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Load Weekly Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Activity?1": {
+      "main": [
+        [
+          {
+            "node": "Build Insights Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build No-Activity Message (Weekly)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Active Tenants (daily)": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Tenants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Active Tenants (weekly)": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Tenants1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build No-Activity Message (Daily)": {
+      "main": [
+        [
+          {
+            "node": "Send No-Activity Message (Daily)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send No-Activity Message (Daily)": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Tenants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build No-Activity Message (Weekly)": {
+      "main": [
+        [
+          {
+            "node": "Send No-Activity Message (Weekly)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send No-Activity Message (Weekly)": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Tenants1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 7am Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load Active Tenants (daily)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Sunday 7pm Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load Active Tenants (weekly)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": {
+    "node:Daily 9pm Trigger": {
+      "recurrenceRules": []
+    },
+    "node:Weekly Monday 8am Trigger": {
+      "recurrenceRules": []
+    },
+    "node:Every Minute": {
+      "recurrenceRules": []
+    },
+    "node:Daily 7am Trigger": {
+      "recurrenceRules": []
+    },
+    "node:Weekly Sunday 7pm Trigger": {
+      "recurrenceRules": []
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "f02373e1-13a3-4e90-8fcb-bf48b26436e9",
+  "versionCounter": 228,
+  "triggerCount": 2,
+  "shared": [
+    {
+      "updatedAt": "2026-04-28T21:53:41.094Z",
+      "createdAt": "2026-04-28T21:53:41.094Z",
+      "role": "workflow:owner",
+      "workflowId": "SCK5JfDzWi82djfc",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version f02373e1",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.891104+00:00",
+    "original_name": "MySquad Insights Alerts Telegram",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_customers": "table_1",
+      "msq_customer_orders": "table_2",
+      "msq_credit_transactions": "table_3",
+      "msq_chat_histories": "table_4",
+      "active_customers": "table_5",
+      "recent_orders": "table_6",
+      "chat_samples": "table_7",
+      "daily_credits": "table_8",
+      "daily_revenue": "table_9",
+      "pending_payments": "table_10",
+      "appointment_count": "table_11",
+      "product_order_count": "table_12",
+      "yesterday": "table_13",
+      "last_seen_at": "table_14",
+      "weekly_stats": "table_15",
+      "order_stats": "table_16",
+      "top_products": "table_17",
+      "hourly_activity": "table_18",
+      "retention": "table_19",
+      "weekly_credits": "table_20",
+      "weekly_appointment_count": "table_21",
+      "msq_tenants": "table_22",
+      "msq_business_profiles": "table_23",
+      "msq_agent_config": "table_24",
+      "msq_platform_integrations": "table_25",
+      "your": "table_26"
+    },
+    "columns_renamed": {
+      "business_id": "column_1",
+      "created_at": "column_2",
+      "tenant_id": "column_3",
+      "credits_used": "column_4",
+      "delivery_type": "column_5",
+      "last_seen_at": "column_6"
+    }
+  }
+}

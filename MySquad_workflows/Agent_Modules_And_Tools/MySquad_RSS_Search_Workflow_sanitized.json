@@ -1,0 +1,194 @@
+{
+  "updatedAt": "2026-05-03T08:42:44.584Z",
+  "createdAt": "2026-03-26T23:00:52.420Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad RSS Search Workflow",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"Interest\": \"a string\"\n}"
+      },
+      "id": "__NODE_1__",
+      "typeVersion": 1.1,
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        -560,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const interest = $json.Interest.toLowerCase().trim();\n\nconst factualPatterns = [\n  'president', 'ceo', 'governor', 'minister', 'chairman',\n  'rate', 'price', 'exchange', 'naira', 'dollar', 'pound', 'euro',\n  'winner', 'champion', 'richest', 'who is', 'current',\n  'bitcoin', 'crypto', 'ethereum', 'stock', 'latest'\n];\n\nconst isFactual = factualPatterns.some(p => interest.includes(p));\nconst query = isFactual \n  ? `${interest} ${new Date().getFullYear()}` \n  : interest;\n\nreturn {\n  json: {\n    interest,\n    query,\n    isFactual\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        544
+      ],
+      "id": "__NODE_2__",
+      "name": "Build Query"
+    },
+    {
+      "parameters": {
+        "url": "[URL]",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "count",
+              "value": "5"
+            },
+            {
+              "name": "search_lang",
+              "value": "en"
+            },
+            {
+              "name": "country",
+              "value": "ALL"
+            },
+            {
+              "name": "freshness",
+              "value": "={{ $json.isFactual ? 'pm' : 'pw' }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept-Encoding",
+              "value": "gzip"
+            },
+            {
+              "name": "X-Subscription-Token",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -112,
+        544
+      ],
+      "id": "__NODE_3__",
+      "name": "Brave Search"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\n\n// Brave returns results under web.results\nconst items = (data.web && data.web.results) ? data.web.results : [];\n\nif (items.length === 0) {\n  return [{\n    json: {\n      results: [],\n      summary: 'No results found for this query.',\n      query: $('Build Query').first().json.query,\n      isFactual: $('Build Query').first().json.isFactual,\n      resultCount: 0\n    }\n  }];\n}\n\n// Extract the most useful fields\nconst results = items.slice(0, 5).map(item => ({\n  title: item.title || '',\n  link: item.url || '',\n  snippet: item.description || '',\n  source: item.meta_url ? item.meta_url.hostname : (item.url || '').replace(/https?:\\/\\/([^/]+).*/,'$1')\n}));\n\n// Build a combined text summary MyGuy can reason over\nconst summary = results\n  .map((r, i) => `[${i + 1}] ${r.title}\\nSource: ${r.source}\\nSnippet: ${r.snippet}\\nURL: ${r.link}`)\n  .join('\\n\\n');\n\nreturn [{\n  json: {\n    results,\n    summary,\n    query: $('Build Query').first().json.query,\n    isFactual: $('Build Query').first().json.isFactual,\n    resultCount: results.length\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        544
+      ],
+      "id": "__NODE_4__",
+      "name": "Extract Results"
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Build Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Query": {
+      "main": [
+        [
+          {
+            "node": "Brave Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Brave Search": {
+      "main": [
+        [
+          {
+            "node": "Extract Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "Interest": "USA president 2026"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "15fa69c4-34f4-4772-af19-9e65ff457d01",
+  "versionCounter": 62,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-03-26T23:00:52.420Z",
+      "createdAt": "2026-03-26T23:00:52.420Z",
+      "role": "workflow:owner",
+      "workflowId": "GwbVd9Sf2aNPWViH",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 15fa69c4",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:22.025273+00:00",
+    "original_name": "MySquad RSS Search Workflow",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {},
+    "columns_renamed": {}
+  }
+}

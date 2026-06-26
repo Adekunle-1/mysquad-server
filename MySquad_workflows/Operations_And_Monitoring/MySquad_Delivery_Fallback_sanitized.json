@@ -1,0 +1,229 @@
+{
+  "updatedAt": "2026-06-03T10:55:15.095Z",
+  "createdAt": "2026-06-03T10:53:13.786Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Delivery Fallback",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 3
+            }
+          ]
+        }
+      },
+      "id": "__NODE_1__",
+      "name": "Every 3 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -720,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  o.id,\n  o.order_number,\n  o.customer_chat_id,\n  o.business_id,\n  o.tenant_id,\n  pi.access_token AS bot_token\nFROM table_1 o\nJOIN table_2 pi\n  ON pi.business_id = o.business_id\n  AND pi.platform = 'telegram'\n  AND pi.is_active = true\nWHERE o.status = 'dispatched'\n  AND o.dispatched_at < now() - interval '48 hours'\n  AND o.review_requested_at IS NULL",
+        "options": {}
+      },
+      "id": "__NODE_2__",
+      "name": "Fetch Overdue Dispatched Orders",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -480,
+        80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "sched-check-001",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "__NODE_3__",
+      "name": "Has Overdue Orders?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE table_1\ncolumn_1 'delivered',\n    delivered_at = now(),\n    review_requested_at = now()\ncolumn_2 $1::uuid\nRETURNING order_number, customer_chat_id, tenant_id, business_id",
+        "options": {
+          "queryReplacement": "={{ [$json.id] }}"
+        }
+      },
+      "id": "__NODE_4__",
+      "name": "Mark as Delivered",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $('Fetch Overdue Dispatched Orders').item.json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  chat_id: $('Fetch Overdue Dispatched Orders').item.json.customer_chat_id,\n  text: 'We hope your order arrived safely! \ud83c\udf89\\n\\nWould you mind leaving a quick rating? It helps us serve you better:',\n  parse_mode: 'HTML',\n  reply_markup: { inline_keyboard: [[\n    { text: '\u2b50', callback_data: 'review|' + $json.order_number + '|1' },\n    { text: '\u2b50\u2b50', callback_data: 'review|' + $json.order_number + '|2' },\n    { text: '\u2b50\u2b50\u2b50', callback_data: 'review|' + $json.order_number + '|3' },\n    { text: '\u2b50\u2b50\u2b50\u2b50', callback_data: 'review|' + $json.order_number + '|4' },\n    { text: '\u2b50\u2b50\u2b50\u2b50\u2b50', callback_data: 'review|' + $json.order_number + '|5' }\n  ]] }\n} }}",
+        "options": {}
+      },
+      "id": "__NODE_5__",
+      "name": "Send Fallback Review Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Every 3 Hours": {
+      "main": [
+        [
+          {
+            "node": "Fetch Overdue Dispatched Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Overdue Dispatched Orders": {
+      "main": [
+        [
+          {
+            "node": "Has Overdue Orders?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Overdue Orders?": {
+      "main": [
+        [
+          {
+            "node": "Mark as Delivered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Delivered": {
+      "main": [
+        [
+          {
+            "node": "Send Fallback Review Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:Every 3 Hours": {
+      "recurrenceRules": [
+        9
+      ]
+    }
+  },
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "fa4ac761-03ea-4d9d-bb47-12b02f4436dd",
+  "versionCounter": 193,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-06-03T10:53:13.786Z",
+      "createdAt": "2026-06-03T10:53:13.786Z",
+      "role": "workflow:owner",
+      "workflowId": "kmdmjEknQE3kzfvg",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version fa4ac761",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.843565+00:00",
+    "original_name": "MySquad Delivery Fallback",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_customer_orders": "table_1",
+      "msq_platform_integrations": "table_2"
+    },
+    "columns_renamed": {
+      "status": "column_1",
+      "id": "column_2"
+    }
+  }
+}

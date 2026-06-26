@@ -1,0 +1,363 @@
+{
+  "updatedAt": "2026-05-31T08:52:06.315Z",
+  "createdAt": "2026-05-04T10:48:17.122Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Customer Follow-Up",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "__NODE_1__",
+      "name": "Daily 10am WAT Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -928,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  co.id                  AS order_id,\n  co.order_number,\n  co.tenant_id,\n  co.business_id,\n  co.customer_chat_id,\n  co.items,\n  co.total_amount,\n  co.delivery_type,\n  co.customer_notes,\n  co.status,\n  co.created_at,\n  c.display_name         AS customer_name,\n  c.last_seen_at         AS customer_last_seen,\n  bp.business_name,\n  bp.business_mode,\n  ac.agent_name,\n  ac.tone_profile,\n  pi.access_token        AS bot_token\nFROM table_1 co\nJOIN table_2 c\n  ON c.business_id = co.business_id\n  AND c.platform_id = co.customer_chat_id::text\n  AND c.platform = 'telegram'\nJOIN table_3 bp\n  ON bp.id = co.business_id\nJOIN table_4 ac\n  ON ac.business_id = co.business_id\nJOIN table_5 pi\n  ON pi.business_id = co.business_id\n  AND pi.platform = 'telegram'\n  AND pi.is_active = true\nWHERE co.status IN ('enquiry', 'placed')\n  AND co.payment_status NOT IN ('confirmed', 'proof_submitted')\n  AND co.created_at BETWEEN now() - interval '48 hours' AND now() - interval '6 hours'\n  AND co.followup_sent_at IS NULL\n  AND c.last_seen_at < co.created_at + interval '4 hours'\n  AND c.last_seen_at < now() - interval '2 hours'\nORDER BY co.created_at ASC",
+        "options": {}
+      },
+      "id": "__NODE_2__",
+      "name": "Fetch Stalled Orders",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -704,
+        112
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-stalled",
+              "leftValue": "={{ $json.order_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "__NODE_3__",
+      "name": "Has Stalled Orders?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -480,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "__NODE_4__",
+      "name": "Loop Over Stalled Orders",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -256,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const order = $input.first().json;\n\nlet items = [];\ntry {\n  items = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []);\n} catch(e) {}\n\n// Describe what they ordered in plain English\nlet itemDesc = '';\nif (items.length > 0) {\n  itemDesc = items.map(i => {\n    const qty = (i.quantity && i.quantity > 1) ? i.quantity + 'x ' : '';\n    return qty + (i.name || 'item');\n  }).join(', ');\n}\n\n// Include service specs if present\nconst notes = (order.customer_notes || '').trim();\nconst isBooking = order.delivery_type === 'appointment';\nconst orderType = isBooking ? 'booking' : 'order';\n\n// Time of day greeting (Lagos WAT = UTC+1)\nconst lagosHour = new Date(new Date().getTime() + 60 * 60 * 1000).getUTCHours();\nlet greeting = 'Good morning';\nif (lagosHour >= 12 && lagosHour < 17) greeting = 'Good afternoon';\nelse if (lagosHour >= 17) greeting = 'Good evening';\n\n// Parse tone\nlet tone = 'friendly and warm';\ntry {\n  const tp = typeof order.tone_profile === 'string' ? JSON.parse(order.tone_profile) : (order.tone_profile || {});\n  tone = tp.tone_summary || 'friendly and warm';\n} catch(e) {}\n\nconst customerName = (order.customer_name || 'there').split(' ')[0]; // first name only\n\nconst prompt = `You are ${order.agent_name}, the AI assistant for ${order.business_name}.\n\nWrite a SHORT, natural follow-up message to a customer named ${customerName}.\nThey ${isBooking ? 'booked a service' : 'started an order'} but went quiet before completing it.\n\nWHAT THEY ORDERED: ${itemDesc || 'an item from table_6 catalogue'}${notes ? '\\nTheir specs: ' + notes : ''}\n\nTIME OF DAY: ${greeting} (Lagos time)\nTONE: ${tone}\n\nRULES \u2014 read carefully:\n- Start with: \"${greeting} ${customerName}!\"\n- Sound like a HUMAN casually checking in \u2014 NOT an automated reminder\n- Reference their specific ${isBooking ? 'booking' : 'order'} naturally (mention what they wanted)\n- NEVER say: \"pending order\", \"complete your purchase\", \"you have an outstanding\", \"reminder\"\n- Frame it as genuine care: you noticed, you wanted to check they're okay, you're happy to help\n- 2-3 sentences MAXIMUM. Keep it short and warm.\n- End with something that invites a low-pressure reply (not a direct call to action)\n- No emojis except one at the end if appropriate\n- Telegram plain text only \u2014 no markdown\n\nEXAMPLE (do not copy \u2014 generate something original):\n\"Good morning Ada! Just wanted to check in \u2014 are you still thinking about the senator suit? No rush at all, happy to pick up where we left off whenever works for you \ud83d\ude0a\"\n\nGenerate the message now. Output ONLY the message text, nothing else.`;\n\nreturn {\n  json: {\n    order_id:      order.order_id,\n    order_number:  order.order_number,\n    customer_chat_id: String(order.customer_chat_id),\n    bot_token:     order.bot_token,\n    business_name: order.business_name,\n    agent_name:    order.agent_name,\n    customer_name: customerName,\n    item_desc:     itemDesc,\n    prompt\n  }\n};"
+      },
+      "id": "__NODE_5__",
+      "name": "Build Follow-Up Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "url": "[URL]",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You write short, human, natural follow-up messages for Nigerian businesses. Output ONLY the message text \u2014 no quotes, no explanation, nothing else.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ],\n  \"temperature\": 0.9,\n  \"max_tokens\": 120\n}",
+        "options": {}
+      },
+      "id": "__NODE_6__",
+      "name": "Generate Follow-Up via Groq",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        192,
+        32
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Build Follow-Up Prompt').first().json;\nconst groqResponse = $input.first().json;\n\nlet message = '';\ntry {\n  message = groqResponse.choices[0].message.content.trim();\n} catch(e) {\n  // Safe fallback \u2014 still references their order specifically\n  message = 'Good morning ' + prev.customer_name + '! Just checking in about ' +\n    (prev.item_desc || 'your recent enquiry') + ' \u2014 happy to help whenever you\\'re ready \ud83d\ude0a';\n}\n\n// Strip any quotes Groq may have wrapped it in\nmessage = message.replace(/^\"|\"$/g, '').trim();\n\nreturn {\n  json: {\n    order_id:         prev.order_id,\n    order_number:     prev.order_number,\n    customer_chat_id: prev.customer_chat_id,\n    bot_token:        prev.bot_token,\n    message\n  }\n};"
+      },
+      "id": "__NODE_7__",
+      "name": "Format Follow-Up Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ '[URL]' + $json.bot_token + '/sendMessage' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.customer_chat_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.message }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "__NODE_8__",
+      "name": "Send Follow-Up to Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        640,
+        32
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE table_1\ncolumn_1 now()\ncolumn_2 $1::uuid",
+        "options": {
+          "queryReplacement": "={{ [$('Format Follow-Up Message').first().json.order_id] }}"
+        }
+      },
+      "id": "__NODE_9__",
+      "name": "Stamp Follow-Up Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        864,
+        32
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 10am WAT Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Stalled Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Stalled Orders": {
+      "main": [
+        [
+          {
+            "node": "Has Stalled Orders?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Stalled Orders?": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Stalled Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Stalled Orders": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Build Follow-Up Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Follow-Up Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Follow-Up via Groq",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Follow-Up via Groq": {
+      "main": [
+        [
+          {
+            "node": "Format Follow-Up Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Follow-Up Message": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-Up to Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-Up to Customer": {
+      "main": [
+        [
+          {
+            "node": "Stamp Follow-Up Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stamp Follow-Up Sent": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Stalled Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:Daily 10am WAT Trigger": {
+      "recurrenceRules": [
+        0
+      ]
+    }
+  },
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "f8935a15-8241-4169-ab04-84516edbf6ec",
+  "versionCounter": 35,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-05-04T10:48:17.122Z",
+      "createdAt": "2026-05-04T10:48:17.122Z",
+      "role": "workflow:owner",
+      "workflowId": "9PsxMpYnDPU17O2K",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version f8935a15",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.839927+00:00",
+    "original_name": "MySquad Customer Follow-Up",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_customer_orders": "table_1",
+      "msq_customers": "table_2",
+      "msq_business_profiles": "table_3",
+      "msq_agent_config": "table_4",
+      "msq_platform_integrations": "table_5",
+      "our": "table_6"
+    },
+    "columns_renamed": {
+      "followup_sent_at": "column_1",
+      "id": "column_2"
+    }
+  }
+}

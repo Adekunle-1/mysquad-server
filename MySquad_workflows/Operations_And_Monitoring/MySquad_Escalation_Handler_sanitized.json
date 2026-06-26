@@ -1,0 +1,292 @@
+{
+  "updatedAt": "2026-06-08T14:31:21.783Z",
+  "createdAt": "2026-05-01T21:39:57.669Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Escalation Handler",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tenant_id"
+            },
+            {
+              "name": "business_id"
+            },
+            {
+              "name": "customer_chat_id"
+            },
+            {
+              "name": "customer_name"
+            },
+            {
+              "name": "bot_token"
+            },
+            {
+              "name": "question_text"
+            },
+            {
+              "name": "business_name"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        416,
+        432
+      ],
+      "id": "__NODE_1__",
+      "name": "Incoming Payload"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  order_number,\n  status,\n  items,\n  total_amount,\n  created_at,\n  EXTRACT(EPOCH FROM (now() - created_at)) / 3600 AS hours_ago\nFROM table_1\ncolumn_1 $1\n  column_2 $2::uuid\n  column_3 $3::uuid\n  AND status IN ('enquiry', 'placed', 'pending', 'confirmed')\n  AND payment_status NOT IN ('confirmed')\nORDER BY created_at DESC\nLIMIT 5",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Incoming Payload').first().json.customer_chat_id,\n  $('Incoming Payload').first().json.tenant_id,\n  $('Incoming Payload').first().json.business_id\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        656,
+        432
+      ],
+      "id": "__NODE_2__",
+      "name": "Fetch Customer Orders",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload  = $('Incoming Payload').first().json;\nconst orders   = $('Fetch Customer Orders').all().map(i => i.json).filter(o => o && o.order_number);\nconst rawText  = payload.question_text || '';\nconst isOrderFollowUp = /pending order|follow.?up|still waiting|unconfirmed/i.test(rawText)\n  || /MSQ-[A-Z0-9]+/.test(rawText);\n\nlet enrichedText = rawText;\n\nif (isOrderFollowUp && orders.length > 0) {\n  const orderLines = orders.map(o => {\n    let itemsText = '';\n    try {\n      const items = typeof o.items === 'string' ? JSON.parse(o.items) : (o.items || []);\n      if (Array.isArray(items) && items.length) {\n        itemsText = items.map(i => {\n          const qty   = i.quantity > 1 ? i.quantity + 'x ' : '';\n          const price = i.unit_price ? ' @ \\u20a6' + Number(i.unit_price).toLocaleString() : '';\n          return qty + i.name + price;\n        }).join(', ');\n      }\n    } catch(e) {}\n\n    const hours = Math.round(o.hours_ago || 0);\n    const timeLabel = hours < 1 ? 'just now'\n      : hours < 24 ? hours + 'h ago'\n      : Math.round(hours / 24) + 'd ago';\n\n    const total = o.total_amount\n      ? ' \\u2014 Total: \\u20a6' + Number(o.total_amount).toLocaleString()\n      : '';\n\n    return `\u2022 ${o.order_number} (${o.status}, placed ${timeLabel})${total}${itemsText ? '\\n  Items: ' + itemsText : ''}`;\n  }).join('\\n');\n\n  const count = orders.length;\n  enrichedText = count === 1\n    ? `A customer is following up on an unconfirmed order:\\n${orderLines}\\nPlease confirm or respond.`\n    : `A customer is following up on ${count} unconfirmed orders:\\n${orderLines}\\nPlease attend to these.`;\n}\n\nreturn [{ json: {\n  enriched_text:     enrichedText,\n  is_order_followup: isOrderFollowUp && orders.length > 0,\n  orders:            isOrderFollowUp ? orders : [],\n  tenant_id:         payload.tenant_id,\n  business_id:       payload.business_id,\n  customer_chat_id:  payload.customer_chat_id,\n  customer_name:     payload.customer_name,\n  bot_token:         payload.bot_token,\n  question_text:     payload.question_text,\n  business_name:     payload.business_name\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        432
+      ],
+      "id": "__NODE_3__",
+      "name": "Enrich With Order Details"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH new_code AS (\n  SELECT msq_generate_escalation_code() AS code\n),\ninserted AS (\n  INSERT INTO table_2 (\n    tenant_id, business_id, reply_code,\n    customer_chat_id, customer_platform,\n    question_text, status, expires_at\n  )\n  SELECT\n    $1::uuid, $2::uuid, new_code.code,\n    $3, 'telegram', $4, 'pending',\n    now() + INTERVAL '48 hours'\n  FROM table_3\n  RETURNING id, reply_code\n)\nSELECT\n  i.id            AS escalation_id,\n  i.reply_code,\n  t.telegram_id   AS owner_telegram_id,\n  pi.access_token AS owner_bot_token\nFROM table_4 i\nJOIN table_5 t ON t.id = $1::uuid\nJOIN table_6 pi\n  ON pi.business_id = $2::uuid AND pi.platform = 'telegram'",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Enrich With Order Details').first().json.tenant_id,\n  $('Enrich With Order Details').first().json.business_id,\n  $('Enrich With Order Details').first().json.customer_chat_id,\n  $('Enrich With Order Details').first().json.enriched_text\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1376,
+        432
+      ],
+      "id": "__NODE_4__",
+      "name": "Save Escalation to DB",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ (function() {\n  const photos = $('Fetch Product Photos').all().map(i => i.json).filter(p => p && p.minio_url);\n  const token  = $('Save Escalation to DB').first().json.owner_bot_token;\n  return photos.length === 1\n    ? '[URL]' + token + '/sendPhoto'\n    : '[URL]' + token + '/sendMessage';\n})() }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (function() {\n  const enriched   = $('Enrich With Order Details').first().json;\n  const escalation = $('Save Escalation to DB').first().json;\n  const photos     = $('Fetch Product Photos').all().map(i => i.json).filter(p => p && p.minio_url);\n  const text       = enriched.enriched_text || '';\n  const isOrder    = /MSQ-[A-Z0-9]+/.test(text) || /unconfirmed order/i.test(text);\n\n  const header = isOrder\n    ? '\\u23f3 *Order needs your attention*'\n    : '\\u2753 *Customer message needs your response*';\n\n  const replyMarkup = JSON.stringify({\n    inline_keyboard: [[\n      { text: '\\u270f\\ufe0f Reply to customer', callback_data: 'escalation_reply|' + escalation.escalation_id },\n      { text: '\\u2716 Ignore',                  callback_data: 'escalation_ignore|' + escalation.escalation_id }\n    ]]\n  });\n\n  const fullText = header + '\\n\\n' + text + '\\n\\n_Tap to act:_';\n\n  if (photos.length === 1) {\n    // Single product \u2014 send photo with caption\n    return {\n      chat_id:      String(escalation.owner_telegram_id),\n      photo:        photos[0].minio_url,\n      caption:      fullText,\n      parse_mode:   'Markdown',\n      reply_markup: replyMarkup\n    };\n  }\n\n  // Multiple products or no photos \u2014 send text with photo links\n  let photoLinks = '';\n  if (photos.length > 1) {\n    photoLinks = '\\n\\n*Products:* ' + photos.map(p =>\n      '[' + p.product_name + '](' + p.minio_url + ')'\n    ).join(' \\u00b7 ');\n  }\n\n  return {\n    chat_id:                String(escalation.owner_telegram_id),\n    text:                   fullText + photoLinks,\n    parse_mode:             'Markdown',\n    disable_web_page_preview: false,\n    reply_markup:           replyMarkup\n  };\n})() }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1616,
+        432
+      ],
+      "id": "__NODE_5__",
+      "name": "Notify Owner of Escalation"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  json: {\n    success: true,\n    message: 'Escalated to business owner successfully.'\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        432
+      ],
+      "id": "__NODE_6__",
+      "name": "Return to Agent"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Find product photos matching items in this escalation\n-- Looks at both order items and the escalation text for product name hints\nWITH item_names AS (\n  SELECT DISTINCT LOWER(COALESCE(co.items_text, '')) AS src\n  FROM (\n    SELECT json_array_elements(o.items::json)->>'name' AS items_text\n    FROM table_1 o\n    WHERE o.customer_chat_id = $1\n      AND o.business_id      = $2::uuid\n      AND o.status IN ('enquiry','placed','pending','confirmed')\n      AND o.payment_status NOT IN ('confirmed')\n    LIMIT 10\n  ) co\n  WHERE co.items_text IS NOT NULL AND co.items_text <> ''\n  UNION ALL\n  -- Also extract hints from table_7 text itself\n  SELECT LOWER($3)\n)\nSELECT DISTINCT ON (pi.id)\n  pi.id::text,\n  COALESCE(pi.display_name, pi.product_name) AS product_name,\n  pi.minio_url,\n  pi.price,\n  pi.price_label\nFROM table_8 pi\nJOIN table_9 n ON\n  n.src ILIKE '%' || LOWER(COALESCE(pi.display_name, pi.product_name)) || '%'\n  OR LOWER(COALESCE(pi.display_name, pi.product_name)) ILIKE '%' || n.src || '%'\nWHERE pi.business_id = $2::uuid\n  AND pi.minio_url IS NOT NULL\n  AND pi.image_type = 'product'\nLIMIT 5",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Incoming Payload').first().json.customer_chat_id,\n  $('Incoming Payload').first().json.business_id,\n  $('Enrich With Order Details').first().json.enriched_text\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1136,
+        432
+      ],
+      "id": "__NODE_7__",
+      "name": "Fetch Product Photos",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Payload": {
+      "main": [
+        [
+          {
+            "node": "Fetch Customer Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Customer Orders": {
+      "main": [
+        [
+          {
+            "node": "Enrich With Order Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich With Order Details": {
+      "main": [
+        [
+          {
+            "node": "Fetch Product Photos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Escalation to DB": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner of Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner of Escalation": {
+      "main": [
+        [
+          {
+            "node": "Return to Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Product Photos": {
+      "main": [
+        [
+          {
+            "node": "Save Escalation to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "64be0562-879a-4d32-b35e-deb25a830c33",
+  "versionCounter": 54,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-01T21:39:57.669Z",
+      "createdAt": "2026-05-01T21:39:57.669Z",
+      "role": "workflow:owner",
+      "workflowId": "QZY4H2yBOiE2mQls",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 64be0562",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.852201+00:00",
+    "original_name": "MySquad Escalation Handler",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_customer_orders": "table_1",
+      "msq_escalations": "table_2",
+      "new_code": "table_3",
+      "inserted": "table_4",
+      "msq_tenants": "table_5",
+      "msq_platform_integrations": "table_6",
+      "escalation": "table_7",
+      "msq_product_images": "table_8",
+      "item_names": "table_9"
+    },
+    "columns_renamed": {
+      "customer_chat_id": "column_1",
+      "tenant_id": "column_2",
+      "business_id": "column_3"
+    }
+  }
+}

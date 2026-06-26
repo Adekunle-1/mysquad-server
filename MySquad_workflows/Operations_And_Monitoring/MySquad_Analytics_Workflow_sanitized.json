@@ -1,0 +1,307 @@
+{
+  "updatedAt": "2026-05-05T04:27:28.239Z",
+  "createdAt": "2026-05-04T16:06:03.007Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Analytics Workflow",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "id": "__NODE_1__",
+      "name": "Daily 8am WAT",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        384,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH\n\ntenants AS (\n  SELECT\n    t.id              AS tenant_id,\n    t.full_name,\n    t.preferred_name,\n    COALESCE(bp.id::text, '')           AS business_id,\n    COALESCE(bp.business_name, t.full_name, 'Unknown') AS business_name,\n    COALESCE(bp.business_mode, '')      AS business_mode,\n    COALESCE(mc.balance, 0)             AS credits_balance\n  FROM table_1 t\n  LEFT JOIN table_2 bp ON bp.tenant_id = t.id\n  LEFT JOIN table_3 mc           ON mc.tenant_id = t.id\n  WHERE t.telegram_id IS NOT NULL\n),\n\ndaily_google AS (\n  SELECT tenant_id,\n    (created_at AT TIME ZONE 'Africa/Lagos')::date AS day,\n    COUNT(*) AS cnt\n  FROM table_4\n  column_1 'output_google'\n    column_2 now() - interval '30 days'\n  GROUP BY tenant_id, day\n),\n\ndaily_media AS (\n  SELECT tenant_id,\n    (created_at AT TIME ZONE 'Africa/Lagos')::date AS day,\n    COUNT(*) AS cnt\n  FROM table_4\n  WHERE action_type IN ('output_image','output_video')\n    column_2 now() - interval '30 days'\n  GROUP BY tenant_id, day\n),\n\ndaily_orders AS (\n  SELECT ten.tenant_id,\n    (co.created_at AT TIME ZONE 'Africa/Lagos')::date AS day,\n    COUNT(*) AS cnt\n  FROM table_5 co\n  JOIN table_6 ten ON ten.business_id = co.business_id::text\n  WHERE co.created_at > now() - interval '30 days'\n  GROUP BY ten.tenant_id, day\n),\n\ndaily_dispatch AS (\n  SELECT tenant_id,\n    (created_at AT TIME ZONE 'Africa/Lagos')::date AS day,\n    COUNT(*) AS cnt\n  FROM table_7\n  column_2 now() - interval '30 days'\n  GROUP BY tenant_id, day\n),\n\ndaily_followups_orders AS (\n  SELECT ten.tenant_id,\n    (co.followup_sent_at AT TIME ZONE 'Africa/Lagos')::date AS day,\n    COUNT(*) AS cnt\n  FROM table_5 co\n  JOIN table_6 ten ON ten.business_id = co.business_id::text\n  WHERE co.followup_sent_at IS NOT NULL\n    AND co.followup_sent_at > now() - interval '30 days'\n  GROUP BY ten.tenant_id, day\n),\n\ndaily_followups_escalations AS (\n  SELECT tenant_id,\n    (created_at AT TIME ZONE 'Africa/Lagos')::date AS day,\n    COUNT(*) AS cnt\n  FROM table_8\n  column_3 'replied'\n    column_2 now() - interval '30 days'\n  GROUP BY tenant_id, day\n),\n\ndaily_followups AS (\n  SELECT tenant_id, day, SUM(cnt) AS cnt\n  FROM (\n    SELECT * FROM table_9\n    UNION ALL\n    SELECT * FROM table_10\n  ) combined\n  GROUP BY tenant_id, day\n),\n\ndaily_reminders AS (\n  SELECT tenant_id,\n    (created_at AT TIME ZONE 'Africa/Lagos')::date AS day,\n    COUNT(*) AS cnt\n  FROM table_4\n  WHERE action_type IN ('output_reminder','output_news')\n    column_2 now() - interval '30 days'\n  GROUP BY tenant_id, day\n),\n\ndaily_credits_spent AS (\n  SELECT tenant_id,\n    (created_at AT TIME ZONE 'Africa/Lagos')::date AS day,\n    SUM(credits_used) AS naira_spent\n  FROM table_4\n  column_4 0\n    column_2 now() - interval '30 days'\n  GROUP BY tenant_id, day\n),\n\nall_active_days AS (\n  SELECT tenant_id, day FROM table_11   UNION\n  SELECT tenant_id, day FROM table_12    UNION\n  SELECT tenant_id, day FROM table_13   UNION\n  SELECT tenant_id, day FROM table_14 UNION\n  SELECT tenant_id, day FROM table_15 UNION\n  SELECT tenant_id, day FROM table_16\n)\n\nSELECT\n  COALESCE(t.tenant_id::text, ad.tenant_id::text)    AS tenant_id,\n  COALESCE(t.full_name,     'Unknown')                AS full_name,\n  COALESCE(t.preferred_name,t.full_name,'Unknown')    AS preferred_name,\n  COALESCE(t.business_name, 'Unknown')                AS business_name,\n  COALESCE(t.business_mode, '')                       AS business_mode,\n  COALESCE(t.credits_balance, 0)                      AS credits_balance,\n  ad.day::text                                         AS day,\n  COALESCE(dcs.naira_spent, 0)                        AS daily_credits_spent,\n  COALESCE(dg.cnt,  0)                                AS google,\n  COALESCE(dm.cnt,  0)                                AS media,\n  COALESCE(dor.cnt, 0)                                AS orders,\n  COALESCE(dd.cnt,  0)                                AS dispatch,\n  COALESCE(df.cnt,  0)                                AS followups,\n  COALESCE(dr.cnt,  0)                                AS reminders\nFROM table_17 ad\nLEFT JOIN table_6 t               ON t.tenant_id  = ad.tenant_id\nLEFT JOIN table_11 dg         ON dg.tenant_id = ad.tenant_id AND dg.day  = ad.day\nLEFT JOIN table_12 dm          ON dm.tenant_id = ad.tenant_id AND dm.day  = ad.day\nLEFT JOIN table_13 dor        ON dor.tenant_id= ad.tenant_id AND dor.day = ad.day\nLEFT JOIN table_14 dd       ON dd.tenant_id = ad.tenant_id AND dd.day  = ad.day\nLEFT JOIN table_15 df      ON df.tenant_id = ad.tenant_id AND df.day  = ad.day\nLEFT JOIN table_16 dr      ON dr.tenant_id = ad.tenant_id AND dr.day  = ad.day\nLEFT JOIN table_18 dcs ON dcs.tenant_id= ad.tenant_id AND dcs.day = ad.day\nORDER BY ad.day DESC, COALESCE(t.full_name,'Unknown')\n",
+        "options": {}
+      },
+      "id": "__NODE_2__",
+      "name": "Pull Feature Analytics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        624,
+        400
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const RECIPIENT_IDS = ['996797292','813122587'];\n\nconst all           = $input.all().map(i => i.json);\nconst analyticsRows = all.filter(r => r.day   !== undefined && r.day   !== null);\nconst signupRows    = all.filter(r => r.signup_date !== undefined);\n\nconst html = `<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\"/>\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0,maximum-scale=1.0\"/>\n<title>MySquad Analytics</title>\n<style>\n:root{\n  --a:#F13A01;--t:#111827;--m:#6B7280;--li:#D1D5DB;\n  --bd:#E5E7EB;--bg:#F0F2F5;--s:#fff;--r:9px;\n  --green:#10B981;--lw:210px;\n}\n*{box-sizing:border-box;margin:0;padding:0;}\nbody{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;\n  background:var(--bg);color:var(--t);min-height:100vh;}\n\n/* \u2500\u2500 Page shell \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.page{max-width:960px;margin:0 auto;padding:14px 12px 50px;}\n\n/* Header */\n.hdr{display:flex;align-items:center;gap:8px;margin-bottom:14px;}\n.hdot{width:8px;height:8px;border-radius:50%;background:var(--a);flex-shrink:0;}\n.hdr h1{font-size:16px;font-weight:800;letter-spacing:-.2px;}\n.hdr .stamp{margin-left:auto;font-size:9px;color:var(--li);}\n\n/* \u2500\u2500 Two-column layout \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.layout{display:flex;gap:12px;align-items:flex-start;}\n\n/* LEFT SIDEBAR */\n.sidebar{\n  width:var(--lw);flex-shrink:0;\n  display:flex;flex-direction:column;gap:10px;\n  position:sticky;top:14px;\n}\n\n/* RIGHT MAIN */\n.main{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;}\n\n/* Mobile: stack */\n@media(max-width:599px){\n  .layout{flex-direction:column;}\n  .sidebar{width:100%;position:static;}\n}\n\n/* \u2500\u2500 Calendar (sidebar) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.cal{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);padding:8px;}\n.cal-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;}\n.cal-mo{font-size:11px;font-weight:700;}\n.cal-nav button{background:none;border:none;font-size:13px;font-weight:700;\n  color:var(--m);cursor:pointer;padding:0 5px;border-radius:3px;line-height:1.6;}\n.cal-nav button:hover:not(:disabled){color:var(--a);}\n.cal-nav button:disabled{opacity:.2;cursor:not-allowed;}\n.cal-dow{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:2px;}\n.cal-dow span{text-align:center;font-size:8px;font-weight:600;color:var(--li);}\n.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;}\n.cc{height:22px;border-radius:3px;display:flex;align-items:center;\n  justify-content:center;font-size:10px;color:var(--li);\n  cursor:default;transition:all .1s;position:relative;}\n.cc.om{opacity:0;}\n.cc.hd{color:var(--t);font-weight:600;cursor:pointer;background:#FFF5F2;}\n.cc.hd:hover{background:#FFE0D6;}\n.cc.sel{background:var(--a)!important;color:#fff!important;font-weight:700;border-radius:4px;}\n.cc.tod::after{content:'';position:absolute;bottom:1px;left:50%;\n  transform:translateX(-50%);width:3px;height:3px;\n  border-radius:50%;background:var(--a);}\n.cc.sel.tod::after{background:rgba(255,255,255,.6);}\n\n/* \u2500\u2500 Owner roster (sidebar) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.roster{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;}\n.roster-hdr{padding:7px 10px;border-bottom:1px solid var(--bd);\n  font-size:9px;font-weight:700;color:var(--a);\n  text-transform:uppercase;letter-spacing:.7px;}\n.roster-scroll{max-height:340px;overflow-y:auto;}\n.rrow{display:flex;justify-content:space-between;align-items:center;\n  padding:7px 10px;border-bottom:1px solid #F9FAFB;gap:6px;}\n.rrow:last-child{border-bottom:none;}\n.rname{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}\n.rbiz{font-size:9px;color:var(--m);margin-top:1px;\n  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;}\n.rbal{font-size:11px;font-weight:800;flex-shrink:0;}\n.rbal.ok{color:var(--green);}\n.rbal.low{color:var(--a);}\n\n/* \u2500\u2500 Day label \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.dlbl{font-size:14px;font-weight:800;color:var(--t);}\n.dlbl span{font-size:11px;font-weight:400;color:var(--m);margin-left:6px;}\n\n/* \u2500\u2500 KPIs \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;}\n@media(min-width:480px){.kpis{grid-template-columns:repeat(4,1fr);}}\n.kpi{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);padding:10px 11px;}\n.kl{font-size:8px;font-weight:700;color:var(--m);text-transform:uppercase;\n  letter-spacing:.4px;margin-bottom:3px;}\n.kv{font-size:22px;font-weight:800;line-height:1;}\n.ks{font-size:9px;color:var(--m);margin-top:2px;}\n\n/* \u2500\u2500 Section label \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.slbl{font-size:9px;font-weight:700;color:var(--a);text-transform:uppercase;\n  letter-spacing:.7px;border-bottom:1px solid var(--bd);padding-bottom:5px;}\n\n/* \u2500\u2500 Feature breakdown bars \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.ovr{display:flex;flex-direction:column;gap:6px;}\n.or{background:var(--s);border:1px solid var(--bd);border-radius:7px;padding:9px 11px;}\n.om2{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}\n.on{font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px;}\n.opip{width:6px;height:6px;border-radius:50%;flex-shrink:0;}\n.ostat b{font-size:13px;font-weight:800;color:var(--t);}\n.ostat{font-size:11px;color:var(--m);}\n.bt{height:5px;background:#F3F4F6;border-radius:3px;overflow:hidden;}\n.bf{height:100%;border-radius:3px;transition:width .3s;}\n\n/* \u2500\u2500 Tenant activity cards \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.cards{display:flex;flex-direction:column;gap:6px;}\n.card{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;}\n.ctrig{display:flex;justify-content:space-between;align-items:center;\n  padding:10px 12px;cursor:pointer;user-select:none;transition:background .1s;}\n.ctrig:hover{background:#FAFAFA;}\n.cname{font-size:13px;font-weight:800;}\n.ctags{display:flex;align-items:center;gap:4px;margin-top:2px;flex-wrap:wrap;}\n.ctag{font-size:9px;font-weight:600;color:var(--m);background:#F3F4F6;\n  border-radius:3px;padding:1px 5px;}\n.ctag.sp{color:var(--a);background:#FFF5F2;}\n.cright{display:flex;align-items:center;gap:7px;flex-shrink:0;margin-left:8px;}\n.cevt{font-size:15px;font-weight:800;color:var(--a);}\n.cevtl{font-size:9px;color:var(--m);text-align:right;}\n.chev{font-size:9px;color:var(--li);transition:transform .2s;}\n.card.open .chev{transform:rotate(180deg);}\n.cbody{display:none;border-top:1px solid var(--bd);}\n.card.open .cbody{display:block;}\n.bsec{padding:9px 12px;border-bottom:1px solid #F9FAFB;}\n.bsec:last-child{border-bottom:none;}\n.bsnm{font-size:9px;font-weight:700;color:var(--m);text-transform:uppercase;\n  letter-spacing:.5px;margin-bottom:6px;display:flex;justify-content:space-between;}\n.bsnm span{font-weight:400;text-transform:none;letter-spacing:0;color:var(--li);}\n.feats{display:flex;flex-direction:column;gap:5px;}\n.fr{display:grid;grid-template-columns:1fr 38px 55px;align-items:center;gap:5px;}\n.fn{font-size:11px;}\n.fp{font-size:11px;font-weight:700;text-align:right;}\n.fb2{height:4px;background:#F3F4F6;border-radius:2px;overflow:hidden;}\n.ff{height:100%;border-radius:2px;}\n.fz .fn{color:var(--li);}\n.fz .fp{color:var(--li);font-weight:400;}\n.noact{color:var(--li);font-size:10px;font-style:italic;}\n.empty{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);\n  padding:24px;text-align:center;color:var(--m);font-size:12px;}\n</style>\n</head>\n<body>\n<div class=\"page\">\n\n  <!-- Header -->\n  <div class=\"hdr\">\n    <div class=\"hdot\"></div>\n    <h1>MySquad Analytics</h1>\n    <div class=\"stamp\" id=\"stamp\"></div>\n  </div>\n\n  <div class=\"layout\">\n\n    <!-- \u2500\u2500 LEFT SIDEBAR \u2500\u2500 -->\n    <div class=\"sidebar\">\n\n      <!-- Calendar -->\n      <div class=\"cal\">\n        <div class=\"cal-top\">\n          <div class=\"cal-mo\" id=\"calmo\"></div>\n          <div class=\"cal-nav\">\n            <button id=\"cprev\" onclick=\"calShift(-1)\">\u2039</button>\n            <button id=\"cnext\" onclick=\"calShift(1)\">\u203a</button>\n          </div>\n        </div>\n        <div class=\"cal-dow\">\n          <span>S</span><span>M</span><span>T</span><span>W</span>\n          <span>T</span><span>F</span><span>S</span>\n        </div>\n        <div class=\"cal-grid\" id=\"calgrid\"></div>\n      </div>\n\n      <!-- Owner roster \u2014 ALL owners, current balances -->\n      <div class=\"roster\">\n        <div class=\"roster-hdr\">All Owners \u00b7 Current Balance</div>\n        <div class=\"roster-scroll\" id=\"roster\"></div>\n      </div>\n\n    </div><!-- /sidebar -->\n\n    <!-- \u2500\u2500 RIGHT MAIN \u2500\u2500 -->\n    <div class=\"main\">\n\n      <div class=\"dlbl\" id=\"dlbl\"></div>\n      <div class=\"kpis\" id=\"kpis\"></div>\n\n      <div class=\"slbl\">Feature Activity Breakdown</div>\n      <div class=\"ovr\" id=\"ovr\"></div>\n\n      <div class=\"slbl\">Owner Activity This Day</div>\n      <div class=\"cards\" id=\"cards\"></div>\n\n    </div><!-- /main -->\n\n  </div><!-- /layout -->\n</div><!-- /page -->\n\n<script>\nconst RAW     = ANALYTICS_DATA_PLACEHOLDER;\nconst SIGNUPS = SIGNUPS_DATA_PLACEHOLDER;\n\nconst F=[\n  {k:'google',   l:'Google Actions',  c:'#4285F4'},\n  {k:'media',    l:'Media Generation',c:'#F13A01'},\n  {k:'orders',   l:'Order Management',c:'#10B981'},\n  {k:'dispatch', l:'Dispatch',        c:'#06B6D4'},\n  {k:'followups',l:'Lead Follow-Ups', c:'#8B5CF6'},\n  {k:'reminders',l:'Reminder Alerts', c:'#F59E0B'},\n];\nconst MO=['January','February','March','April','May','June',\n          'July','August','September','October','November','December'];\n\n// \u2500\u2500 Index RAW by day \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst dayData={};\nRAW.forEach(r=>{if(!dayData[r.day])dayData[r.day]=[];dayData[r.day].push(r);});\n\n// \u2500\u2500 Build roster from table_19 (all tenants, not just active) \u2500\u2500\u2500\u2500\nfunction firstName(n){return(n||'').split(' ')[0]||n||'?';}\n\nfunction buildRoster(){\n  const sorted=[...SIGNUPS].sort((a,b)=>\n    (a.full_name||'').localeCompare(b.full_name||''));\n  document.getElementById('roster').innerHTML=sorted.map(s=>{\n    const bal=+s.credits_balance||0;\n    const name=firstName(s.preferred_name||s.full_name);\n    return\\`<div class=\"rrow\">\n      <div style=\"min-width:0\">\n        <div class=\"rname\">\\${name}</div>\n        <div class=\"rbiz\">\\${s.business_names||'\u2014'}</div>\n      </div>\n      <div class=\"rbal \\${bal>0?'ok':'low'}\">\u20a6\\${bal.toLocaleString()}</div>\n    </div>\\`;\n  }).join('');\n}\n\n// \u2500\u2500 Calendar state \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst allDays=Object.keys(dayData).sort().reverse();\nfunction lagosToday(){return new Date(Date.now()+3600000).toISOString().split('T')[0];}\nlet cur=lagosToday();\nif(!dayData[cur]&&allDays.length>0)cur=allDays[0];\nlet calY,calM;\nfunction initCal(){const p=cur.split('-');calY=+p[0];calM=+p[1]-1;}\ninitCal();\n\nfunction buildCal(){\n  document.getElementById('calmo').textContent=MO[calM]+' '+calY;\n  const tod=lagosToday();\n  const minDay=allDays[allDays.length-1]||tod;\n  const minP=minDay.split('-'),todP=tod.split('-');\n  const pm=calM===0?11:calM-1,py=calM===0?calY-1:calY;\n  const nm=calM===11?0:calM+1,ny=calM===11?calY+1:calY;\n  document.getElementById('cprev').disabled=\n    py<+minP[0]||(py===+minP[0]&&pm<+minP[1]-1);\n  document.getElementById('cnext').disabled=\n    ny>+todP[0]||(ny===+todP[0]&&nm>+todP[1]-1);\n\n  const fd=new Date(calY,calM,1).getDay();\n  const dim=new Date(calY,calM+1,0).getDate();\n  const dip=new Date(calY,calM,0).getDate();\n  const g=document.getElementById('calgrid');\n  g.innerHTML='';\n  const total=fd+dim>35?42:35;\n  for(let i=0;i<total;i++){\n    const el=document.createElement('div');el.className='cc';\n    let dn,ds,inM;\n    if(i<fd){\n      dn=dip-fd+i+1;\n      const m2=calM===0?12:calM,y2=calM===0?calY-1:calY;\n      ds=\\`\\${y2}-\\${String(m2).padStart(2,'0')}-\\${String(dn).padStart(2,'0')}\\`;\n      inM=false;el.classList.add('om');\n    }else if(i>=fd+dim){\n      dn=i-fd-dim+1;\n      const m2=calM===11?1:calM+2,y2=calM===11?calY+1:calY;\n      ds=\\`\\${y2}-\\${String(m2).padStart(2,'0')}-\\${String(dn).padStart(2,'0')}\\`;\n      inM=false;el.classList.add('om');\n    }else{\n      dn=i-fd+1;\n      ds=\\`\\${calY}-\\${String(calM+1).padStart(2,'0')}-\\${String(dn).padStart(2,'0')}\\`;\n      inM=true;\n    }\n    el.textContent=dn;\n    if(ds===tod&&inM)el.classList.add('tod');\n    if(ds===cur)el.classList.add('sel');\n    if(dayData[ds]){el.classList.add('hd');el.onclick=(()=>{const d=ds;return()=>pick(d);})();}\n    g.appendChild(el);\n  }\n}\n\nfunction calShift(d){\n  calM+=d;if(calM>11){calM=0;calY++;}if(calM<0){calM=11;calY--;}buildCal();\n}\nfunction pick(ds){\n  cur=ds;const p=ds.split('-');calY=+p[0];calM=+p[1]-1;buildCal();renderDay();\n}\n\nfunction fmtDay(ds){\n  const d=new Date(ds+'T12:00:00Z');\n  return d.toLocaleDateString('en-NG',{weekday:'short',day:'numeric',month:'short',year:'numeric'});\n}\nfunction rowTot(r){return F.reduce((s,f)=>s+(+r[f.k]||0),0);}\nfunction modeLabel(m){\n  return{product_only:'Products',service_only:'Services',\n    hybrid_product_led:'Hybrid',hybrid_service_led:'Hybrid'}[m]||'';\n}\n\nfunction renderDay(){\n  const tod=lagosToday();\n  const isToday=cur===tod;\n  document.getElementById('dlbl').innerHTML=\n    \\`\\${fmtDay(cur)}\\${isToday?'<span>\u00b7 Today</span>':''}\\`;\n\n  const rows=dayData[cur]||[];\n  const signupCount=SIGNUPS.filter(s=>s.signup_date<=cur).length;\n\n  if(rows.length===0){\n    document.getElementById('kpis').innerHTML=\\`\n      <div class=\"kpi\"><div class=\"kl\">Total Users</div>\n        <div class=\"kv\">\\${signupCount}</div><div class=\"ks\">signed up by this date</div></div>\n      <div class=\"kpi\"><div class=\"kl\">Active Owners</div>\n        <div class=\"kv\">0</div><div class=\"ks\">this day</div></div>\n      <div class=\"kpi\"><div class=\"kl\">Events</div>\n        <div class=\"kv\">0</div><div class=\"ks\">no activity</div></div>\n      <div class=\"kpi\"><div class=\"kl\">Top Feature</div>\n        <div class=\"kv\" style=\"font-size:11px;padding-top:4px\">\u2014</div>\n        <div class=\"ks\">&nbsp;</div></div>\\`;\n    document.getElementById('ovr').innerHTML=\n      '<div class=\"empty\">No feature activity recorded for this day.</div>';\n    document.getElementById('cards').innerHTML='';\n    return;\n  }\n\n  const grand=rows.reduce((s,r)=>s+rowTot(r),0);\n  const activeT=[...new Set(rows.map(r=>r.tenant_id))].length;\n  const topF=F.map(f=>({...f,t:rows.reduce((s,r)=>s+(+r[f.k]||0),0)}))\n    .sort((a,b)=>b.t-a.t)[0];\n  const topPct=grand>0?((topF.t/grand)*100).toFixed(1):'\u2014';\n\n  document.getElementById('kpis').innerHTML=\\`\n    <div class=\"kpi\"><div class=\"kl\">Total Users</div>\n      <div class=\"kv\">\\${signupCount}</div><div class=\"ks\">signed up by this date</div></div>\n    <div class=\"kpi\"><div class=\"kl\">Active Owners</div>\n      <div class=\"kv\">\\${activeT}</div><div class=\"ks\">this day</div></div>\n    <div class=\"kpi\"><div class=\"kl\">Total Events</div>\n      <div class=\"kv\">\\${grand.toLocaleString()}</div><div class=\"ks\">all features</div></div>\n    <div class=\"kpi\"><div class=\"kl\">Top Feature</div>\n      <div class=\"kv\" style=\"font-size:11px;padding-top:4px;line-height:1.2\">\\${topF.l}</div>\n      <div class=\"ks\">\\${topPct}% of activity</div></div>\n  \\`;\n\n  // Feature bars\n  const ovr=F.map(f=>({...f,t:rows.reduce((s,r)=>s+(+r[f.k]||0),0)}))\n    .sort((a,b)=>b.t-a.t);\n  const maxT=Math.max(...ovr.map(f=>f.t),1);\n  document.getElementById('ovr').innerHTML=ovr.map(f=>{\n    const pct=grand>0?((f.t/grand)*100).toFixed(1):'0.0';\n    const bw=((f.t/maxT)*100).toFixed(1);\n    return\\`<div class=\"or\">\n      <div class=\"om2\">\n        <span class=\"on\"><span class=\"opip\" style=\"background:\\${f.c}\"></span>\\${f.l}</span>\n        <span class=\"ostat\"><b>\\${pct}%</b>&nbsp;\\${f.t.toLocaleString()} events</span>\n      </div>\n      <div class=\"bt\"><div class=\"bf\" style=\"width:\\${bw}%;background:\\${f.c}\"></div></div>\n    </div>\\`;\n  }).join('');\n\n  // Tenant cards\n  const byT={};\n  rows.forEach(r=>{\n    if(!byT[r.tenant_id]){\n      byT[r.tenant_id]={\n        name:firstName(r.preferred_name||r.full_name||'?'),\n        dailySpend:0,businesses:[]\n      };\n    }\n    byT[r.tenant_id].dailySpend+=(+r.daily_credits_spent||0);\n    byT[r.tenant_id].businesses.push(r);\n  });\n\n  const tList=Object.entries(byT)\n    .map(([tid,td])=>({tid,...td,\n      totalEvt:td.businesses.reduce((s,r)=>s+rowTot(r),0)}))\n    .sort((a,b)=>b.totalEvt-a.totalEvt);\n\n  document.getElementById('cards').innerHTML=tList.map((tn,idx)=>{\n    const bizCount=tn.businesses.length;\n    const bizLabel=bizCount===1?'1 business':\\`\\${bizCount} businesses\\`;\n    const bizSecs=tn.businesses.map(r=>{\n      const t2=rowTot(r);\n      const ml=modeLabel(r.business_mode);\n      const feats=F.map(f=>({...f,cnt:+r[f.k]||0,\n        pct:t2>0?((+r[f.k]||0)/t2)*100:0}))\n        .sort((a,b)=>b.cnt-a.cnt);\n      return\\`<div class=\"bsec\">\n        <div class=\"bsnm\">\\${r.business_name}\\${ml?\\` \u00b7 \\${ml}\\`:''}\n          <span>\\${t2} events</span></div>\n        \\${t2===0?'<div class=\"noact\">No activity this day</div>'\n          :\\`<div class=\"feats\">\\${feats.map(f=>\\`\n            <div class=\"fr \\${f.cnt===0?'fz':''}\">\n              <span class=\"fn\">\\${f.l}</span>\n              <span class=\"fp\" style=\"\\${f.cnt>0?'color:'+f.c:''}\">\\${f.pct>0?f.pct.toFixed(1)+'%':'\u2014'}</span>\n              <div class=\"fb2\"><div class=\"ff\" style=\"width:\\${f.pct.toFixed(1)}%;background:\\${f.c}\"></div></div>\n            </div>\\`).join('')}</div>\\`}\n      </div>\\`;\n    }).join('');\n\n    return\\`<div class=\"card\" id=\"tc\\${idx}\">\n      <div class=\"ctrig\" onclick=\"tog(\\${idx})\">\n        <div style=\"flex:1;min-width:0\">\n          <div class=\"cname\">\\${tn.name}</div>\n          <div class=\"ctags\">\n            <span class=\"ctag\">\\${bizLabel}</span>\n            \\${tn.dailySpend>0\n              ?\\`<span class=\"ctag sp\">\u20a6\\${tn.dailySpend.toLocaleString()} spent</span>\\`:''}\n          </div>\n        </div>\n        <div class=\"cright\">\n          <div>\n            <div class=\"cevt\">\\${tn.totalEvt}</div>\n            <div class=\"cevtl\">events</div>\n          </div>\n          <span class=\"chev\">\u25bc</span>\n        </div>\n      </div>\n      <div class=\"cbody\">\\${bizSecs}</div>\n    </div>\\`;\n  }).join('');\n}\n\nfunction tog(i){document.getElementById('tc'+i).classList.toggle('open');}\n\n// \u2500\u2500 Init \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst ln=new Date(Date.now()+3600000);\ndocument.getElementById('stamp').textContent=\n  ln.toISOString().replace('T',' ').substring(0,16)+' WAT';\nbuildRoster();\nbuildCal();\nrenderDay();\n</script>\n</body>\n</html>\n`\n  .replace('ANALYTICS_DATA_PLACEHOLDER', JSON.stringify(analyticsRows))\n  .replace('SIGNUPS_DATA_PLACEHOLDER',   JSON.stringify(signupRows));\n\nconst now = new Date(Date.now() + 3600000);\nconst ds  = now.toISOString().split('T')[0];\nconst ts  = now.toISOString().replace('T',' ').substring(0,16);\n\nreturn [{json:{\n  html,\n  filename: `mysquad_analytics_${ds}.html`,\n  recipient_ids: RECIPIENT_IDS,\n  analytics_rows: analyticsRows.length,\n  signup_rows:    signupRows.length,\n  unique_days:   [...new Set(analyticsRows.map(r=>r.day))].length,\n  generated_at:  ts+' WAT'\n}}];"
+      },
+      "id": "__NODE_3__",
+      "name": "Build Analytics HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst base64 = Buffer.from(data.html, 'utf8').toString('base64');\nreturn [{\n  json: {\n    recipient_ids: data.recipient_ids,\n    filename:      data.filename,\n    generated_at:  data.generated_at,\n    row_count:     data.row_count,\n    unique_days:   data.unique_days\n  },\n  binary: {\n    document: {\n      data:          base64,\n      mimeType:      'text/html',\n      fileName:      data.filename,\n      fileExtension: 'html'\n    }\n  }\n}];"
+      },
+      "id": "__NODE_4__",
+      "name": "Encode to Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first();\nreturn (data.json.recipient_ids || []).map(chatId => ({\n  json: {\n    chat_id:      chatId,\n    filename:     data.json.filename,\n    generated_at: data.json.generated_at,\n    row_count:    data.json.row_count,\n    unique_days:  data.json.unique_days\n  },\n  binary: data.binary\n}));"
+      },
+      "id": "__NODE_5__",
+      "name": "Expand per Recipient",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendDocument",
+        "chatId": "={{ $json.chat_id }}",
+        "binaryData": true,
+        "binaryPropertyName": "document",
+        "additionalFields": {
+          "caption": "={{ '\ud83d\udcca *MySquad Analytics*\\n' + $json.generated_at + '\\n' + $json.row_count + ' owner records \u00b7 ' + $json.unique_days + ' days of history\\n\\nOpen the HTML file in any browser.' }}"
+        }
+      },
+      "id": "__NODE_6__",
+      "name": "Send Analytics to Recipients",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1824,
+        480
+      ],
+      "webhookId": "__WEBHOOK_1__",
+      "credentials": {
+        "telegramApi": {
+          "id": "__TELEGRAM_CRED_ID",
+          "name": "Telegram Credentials"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  t.id::text                                               AS tenant_id,\n  t.full_name,\n  t.preferred_name,\n  (t.created_at AT TIME ZONE 'Africa/Lagos')::date::text   AS signup_date,\n  COALESCE(mc.balance, 0)                                  AS credits_balance,\n  COALESCE(\n    string_agg(DISTINCT bp.business_name, ' \u00b7 ' ORDER BY bp.business_name),\n    t.full_name\n  )                                                        AS business_names,\n  COUNT(DISTINCT bp.id)                                    AS business_count\nFROM table_1 t\nLEFT JOIN table_3 mc           ON mc.tenant_id = t.id\nLEFT JOIN table_2 bp ON bp.tenant_id = t.id\nWHERE t.telegram_id IS NOT NULL\nGROUP BY t.id, t.full_name, t.preferred_name, t.created_at, mc.balance\nORDER BY t.full_name\n",
+        "options": {}
+      },
+      "id": "__NODE_7__",
+      "name": "Pull Signup Dates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        624,
+        560
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "__NODE_8__",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        864,
+        480
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 8am WAT": {
+      "main": [
+        [
+          {
+            "node": "Pull Feature Analytics",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pull Signup Dates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pull Feature Analytics": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pull Signup Dates": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Build Analytics HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Analytics HTML": {
+      "main": [
+        [
+          {
+            "node": "Encode to Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Encode to Binary": {
+      "main": [
+        [
+          {
+            "node": "Expand per Recipient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand per Recipient": {
+      "main": [
+        [
+          {
+            "node": "Send Analytics to Recipients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": {
+    "node:Daily 8am WAT": {
+      "recurrenceRules": [
+        0
+      ]
+    }
+  },
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "ba5695a7-5ace-4b6e-8e7d-cdc4cf2e6776",
+  "versionCounter": 44,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-05-04T16:06:03.007Z",
+      "createdAt": "2026-05-04T16:06:03.007Z",
+      "role": "workflow:owner",
+      "workflowId": "lutnIhA5hbguHJZ1",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version ba5695a7",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.783019+00:00",
+    "original_name": "MySquad Analytics Workflow",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_tenants": "table_1",
+      "msq_business_profiles": "table_2",
+      "msq_credits": "table_3",
+      "msq_credit_transactions": "table_4",
+      "msq_customer_orders": "table_5",
+      "tenants": "table_6",
+      "msq_dispatch_orders": "table_7",
+      "msq_escalations": "table_8",
+      "daily_followups_orders": "table_9",
+      "daily_followups_escalations": "table_10",
+      "daily_google": "table_11",
+      "daily_media": "table_12",
+      "daily_orders": "table_13",
+      "daily_dispatch": "table_14",
+      "daily_followups": "table_15",
+      "daily_reminders": "table_16",
+      "all_active_days": "table_17",
+      "daily_credits_spent": "table_18",
+      "SIGNUPS": "table_19"
+    },
+    "columns_renamed": {
+      "action_type": "column_1",
+      "created_at": "column_2",
+      "status": "column_3",
+      "credits_used": "column_4"
+    }
+  }
+}

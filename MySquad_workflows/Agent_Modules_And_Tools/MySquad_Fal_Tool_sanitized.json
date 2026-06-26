@@ -1,0 +1,552 @@
+{
+  "updatedAt": "2026-06-04T16:40:53.538Z",
+  "createdAt": "2026-04-13T10:31:01.924Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "Fal Tool",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"output\": \"list\",\n  \"gen_mode\": \"string\",\n  \"gen_prompt\": \"string\",\n  \"caption\": \"string\",\n  \"image_id\": \"string\",\n  \"phone_no\": \"string\",\n  \"source\": \"string\",\n  \"telegram_id\": \"string\"\n}"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1584,
+        800
+      ],
+      "id": "__NODE_1__",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const requestData = $('Unpack AI Agent Instruction1').first().json;\nconst context = $input.first().json || {};\n\nconst sourceImageUrl =\n  requestData.request_body.image_url ||\n  requestData.request_body.start_image_url ||\n  requestData.source_image_url ||\n  context.last_image_url ||\n  '';\n\nif (\n  (requestData.generation_mode === 'image_to_image' ||\n   requestData.generation_mode === 'image_to_video') &&\n  !sourceImageUrl\n) {\n  throw new Error('This request requires a source image, but none was found.');\n}\n\nconst requestBody = { ...requestData.request_body };\n\nif (requestData.generation_mode === 'image_to_image' && !requestBody.image_url) {\n  requestBody.image_url = sourceImageUrl;\n}\n\nif (\n  requestData.generation_mode === 'image_to_video' &&\n  !requestBody.image_url &&\n  !requestBody.start_image_url\n) {\n  requestBody.image_url = sourceImageUrl;\n}\n\nreturn [\n  {\n    json: {\n      ...requestData,\n      request_body: requestBody\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        800
+      ],
+      "id": "__NODE_2__",
+      "name": "Merge Source Image Context"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst status = String(data.status || '').toUpperCase();\n\nif (['FAILED', 'ERROR', 'CANCELLED', 'CANCELED'].includes(status)) {\n  throw new Error(`fal video generation failed with status: ${status}`);\n}\n\nreturn [{ json: data }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        672
+      ],
+      "id": "__NODE_3__",
+      "name": "Fail on Video Error"
+    },
+    {
+      "parameters": {
+        "jsCode": "let data = $input.first()?.json;\n\nfunction unwrapPayload(value) {\n  let current = value;\n  while (Array.isArray(current) && current.length > 0) {\n    const first = current[0];\n    current = first && typeof first === 'object' && 'json' in first ? first.json : first;\n  }\n  return current && typeof current === 'object' ? current : {};\n}\n\ndata = unwrapPayload(data);\n\nfunction parseJsonValue(value) {\n  if (!value) return null;\n  if (typeof value === 'object') return value;\n  if (typeof value !== 'string') return null;\n  try {\n    return JSON.parse(value);\n  } catch {\n    return null;\n  }\n}\n\nfunction parseTaggedJson(text, tagName) {\n  if (typeof text !== 'string' || !text.trim()) return null;\n  const prefix = `[${tagName}:`;\n  const start = text.indexOf(prefix);\n  if (start === -1) return null;\n  const afterPrefix = text.slice(start + prefix.length).trimStart();\n  // Find matching braces instead of looking for ] \u2014 avoids false matches\n  // on ] characters inside the JSON (e.g. \"images[0].url\", array values)\n  const braceStart = afterPrefix.indexOf('{');\n  if (braceStart === -1) return null;\n  let depth = 0;\n  let braceEnd = -1;\n  for (let i = braceStart; i < afterPrefix.length; i++) {\n    if (afterPrefix[i] === '{') depth++;\n    else if (afterPrefix[i] === '}') {\n      depth--;\n      if (depth === 0) { braceEnd = i; break; }\n    }\n  }\n  if (braceEnd === -1) return null;\n  return parseJsonValue(afterPrefix.slice(braceStart, braceEnd + 1));\n}\n\nfunction parseLegacyJson(text) {\n  if (typeof text !== 'string' || !text.trim()) return null;\n  const matches = text.match(/\\{(?:[^{}]|\\{[^{}]*\\})*\\}/g) || [];\n  for (const raw of matches) {\n    try {\n      const parsed = JSON.parse(raw);\n      if (parsed.fal_model_endpoint && parsed.fal_input) {\n        return { endpoint: parsed.fal_model_endpoint, input: parsed.fal_input };\n      }\n    } catch (_) {}\n  }\n  return null;\n}\n\nfunction inferMode(request) {\n  if (request.generation_mode) return request.generation_mode;\n  const endpoint = request.endpoint || '';\n  const input = request.input || {};\n  const hasImage = !!input.image_url || !!input.start_image_url || !!request.requires_source_image;\n  if (endpoint.includes('/image-to-video')) return 'image_to_video';\n  if (endpoint.includes('/text-to-video')) return 'text_to_video';\n  if (hasImage) return 'image_to_image';\n  return 'text_to_image';\n}\n\n// FIRST: Check for structured data from table_1 Classifier\nlet request = null;\n\nif (data.gen_mode && data.gen_prompt) {\n  // Build request from table_2 fields\n  const generationMode = data.gen_mode;\n  const mediaType = generationMode.includes('video') ? 'video' : 'image';\n  const transport = mediaType === 'video' ? 'queue' : 'sync';\n  const endpoint = generationMode === 'text_to_image' \n    ? 'fal-ai/flux-2-pro'\n    : generationMode === 'image_to_image'\n      ? 'fal-ai/flux-2-pro/edit'\n      : generationMode === 'text_to_video'\n        ? 'fal-ai/kling-video/v3/standard/text-to-video'\n        : 'fal-ai/kling-video/v3/standard/image-to-video';\n  \n  request = {\n    endpoint: endpoint,\n    generation_mode: generationMode,\n    media_type: mediaType,\n    transport: transport,\n    response_path: mediaType === 'video' ? 'video.url' : 'images[0].url',\n    input: {\n      prompt: data.gen_prompt,\n      image_size: mediaType === 'image' ? 'square_hd' : undefined\n    }\n  };\n  \n  // Add source image URL for image-based generation\n  // Priority: data.image_id \u2192 FAL tag embedded URL \u2192 nothing\n  const falTagRequest = parseTaggedJson(data.output, 'FAL_MEDIA_REQUEST');\n  \n  if (generationMode === 'image_to_image') {\n    const urlFromTag = falTagRequest?.input?.image_urls?.[0] || falTagRequest?.input?.image_url || null;\n    const sourceUrl = data.image_id || urlFromTag || '';\n    if (sourceUrl) request.input.image_urls = [sourceUrl];\n  }\n  if (generationMode === 'image_to_video') {\n    const urlFromTag = falTagRequest?.input?.start_image_url || falTagRequest?.input?.image_url || null;\n    const sourceUrl = data.image_id || urlFromTag || '';\n    if (sourceUrl) request.input.start_image_url = sourceUrl;\n  }\n}\n// SECOND: Try to parse from table_3 field\nelse {\n  request =\n    parseJsonValue(data.fal_request) ||\n    parseTaggedJson(data.output, 'FAL_MEDIA_REQUEST') ||\n    parseLegacyJson(data.output) ||\n    parseLegacyJson(data.gen_prompt);\n}\n\nif (!request) {\n  throw new Error('No valid fal request found in input payload.');\n}\n\nconst endpointMap = {\n  text_to_image:  'fal-ai/flux-2-pro',\n  image_to_image: 'fal-ai/flux-2-pro/edit',\n  text_to_video:  'fal-ai/kling-video/v3/standard/text-to-video',\n  image_to_video: 'fal-ai/kling-video/v3/standard/image-to-video'\n};\nconst endpoint = request.endpoint || request.fal_model_endpoint || endpointMap[generationMode] || null;\nif (!endpoint) {\n  throw new Error('fal request is missing endpoint.');\n}\n\nconst generationMode = inferMode(request);\nconst mediaType = request.media_type || (generationMode.includes('video') ? 'video' : 'image');\nconst transport = request.transport || (mediaType === 'video' ? 'queue' : 'sync');\nconst input = { ...(request.input || request.fal_input || {}) };\n\nconst sourceImageUrl =\n  data.source_image_url ||\n  data.image_id ||\n  input.image_urls?.[0] ||\n  input.start_image_url ||\n  '';\n\nif ((generationMode === 'image_to_image' || generationMode === 'image_to_video') && !sourceImageUrl) {\n  throw new Error('This request requires a source image URL, but none was provided.');\n}\n\nif (generationMode === 'image_to_image' && sourceImageUrl && !input.image_url && !input.image_urls) {\n  input.image_urls = [sourceImageUrl];\n}\n\nif (generationMode === 'image_to_video' && sourceImageUrl && !input.image_url && !input.start_image_url) {\n  input.start_image_url = sourceImageUrl;\n}\n\nif (!input.prompt && data.gen_prompt) {\n  input.prompt = data.gen_prompt;\n}\n\nif (!input.prompt) {\n  throw new Error('fal request input is missing prompt.');\n}\n\nconst submitUrl = transport === 'queue'\n  ? `[URL]\n  : `[URL]\n\nreturn [{\n  json: {\n    output: data.output || '',\n    telegram_id: data.telegram_id || '',\n    phone_no: data.phone_no || '',\n    caption: data.caption || '',\n    source: data.source || '',\n    image_id: data.image_id || '',\n    gen_prompt: data.gen_prompt || input.prompt || '',\n    endpoint,\n    generation_mode: generationMode,\n    media_type: mediaType,\n    transport,\n    submit_url: submitUrl,\n    response_path: request.response_path || (mediaType === 'video' ? 'video.url' : 'images[0].url'),\n    request_body: input,\n    source_image_url: sourceImageUrl || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1376,
+        800
+      ],
+      "id": "__NODE_4__",
+      "name": "Unpack AI Agent Instruction1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nreturn [{\n  json: {\n    ...data,\n    fal_url: data.submit_url,\n    is_async: data.transport === 'queue'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -752,
+        800
+      ],
+      "id": "__NODE_5__",
+      "name": "Route to Sync or Async1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.fal_url }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request_body) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -544,
+        800
+      ],
+      "id": "__NODE_6__",
+      "name": "Execute fal.ai Request1",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle the response: extract request_id if async, or media_url if sync\nconst response = $input.first().json;\nconst prevData = $('Route to Sync or Async1').first().json;\n\nlet mediaUrl = null;\nlet requestId = null;\nlet statusUrl = null;\n\nif (prevData.is_async) {\n  // Async response (queue-based: Kling, MiniMax video, etc.)\n  requestId = response.request_id;\n  statusUrl = response.status_url;\n  if (!requestId) throw new Error('No request_id in async response: ' + JSON.stringify(response));\n} else {\n  // Sync response \u2014 try all known fal response shapes\n  if (response.images && response.images.length > 0) {\n    mediaUrl = response.images[0].url;\n  } else if (response.image && response.image.url) {\n    mediaUrl = response.image.url;\n  } else if (response.image_url) {\n    mediaUrl = response.image_url;\n  } else if (response.url) {\n    mediaUrl = response.url;\n  } else if (response.output && response.output.url) {\n    mediaUrl = response.output.url;\n  } else if (response.output && typeof response.output === 'string') {\n    mediaUrl = response.output;\n  }\n\n  if (!mediaUrl) throw new Error('No media URL in sync response: ' + JSON.stringify(response));\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    is_async: prevData.is_async,\n    request_id: requestId,\n    status_url: statusUrl,\n    media_url: mediaUrl\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        800
+      ],
+      "id": "__NODE_7__",
+      "name": "Parse Initial Response1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "check-async",
+              "leftValue": "={{ $json.is_async }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -128,
+        800
+      ],
+      "id": "__NODE_8__",
+      "name": "Is Async (Video)?1"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        80,
+        672
+      ],
+      "id": "__NODE_9__",
+      "name": "Wait for Video Gen1",
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "check-completed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "COMPLETED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        704,
+        672
+      ],
+      "id": "__NODE_10__",
+      "name": "Is Video Ready?1"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.status_url }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        288,
+        672
+      ],
+      "id": "__NODE_11__",
+      "name": "Poll Video Status",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# Generator Logic",
+        "height": 512,
+        "width": 2976,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1648,
+        544
+      ],
+      "typeVersion": 1,
+      "id": "__NODE_12__",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT last_image_url, last_video_url, last_gen_mode, last_gen_prompt\nFROM table_4\ncolumn_1 $1\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [$('Unpack AI Agent Instruction1').first().json.telegram_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1168,
+        800
+      ],
+      "id": "__NODE_13__",
+      "name": "Get Media Context",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = $input.first().json;\n\nlet mediaUrl = inputData.media_url || '';\n\nif (!mediaUrl) {\n    if (inputData.images && inputData.images[0]) {\n        mediaUrl = inputData.images[0].url;\n    } else if (inputData.image && inputData.image.url) {\n        mediaUrl = inputData.image.url;\n    } else if (inputData.video && inputData.video.url) {\n        mediaUrl = inputData.video.url;\n    } else if (inputData.videos && inputData.videos[0]) {\n        mediaUrl = inputData.videos[0].url;\n    } else if (inputData.url) {\n        mediaUrl = inputData.url;\n    } else if (inputData.output && inputData.output.url) {\n        mediaUrl = inputData.output.url;\n    }\n}\n\nif (!mediaUrl) {\n    throw new Error('No media_url found in Fal Tool response');\n}\n\nlet originalRequest = {};\ntry {\n    originalRequest = $('Unpack AI Agent Instruction1').first().json;\n} catch (e) {\n    originalRequest = inputData;\n}\n\nlet mediaType = inputData.media_type || originalRequest.media_type;\nif (!mediaType) {\n    const generationMode = originalRequest.generation_mode || inputData.generation_mode || '';\n    mediaType = generationMode.includes('video') ? 'video' : 'image';\n}\n\n// Apply Cloudinary watermark\nconst CLOUD_NAME = 'duiax34k4';\nconst transform = `l_MySquad_Logo4_qbj7f5,w_70,o_80,g_south_east,x_20,y_20`;\n\nconst cloudinaryType = mediaType === 'video' ? 'video' : 'image';\nmediaUrl = `[URL] + encodeURIComponent(mediaUrl);\n\nreturn [{\n    json: {\n        media_url: mediaUrl,\n        media_type: mediaType,\n        generation_mode: originalRequest.generation_mode || inputData.generation_mode,\n        gen_prompt: originalRequest.gen_prompt || inputData.gen_prompt,\n        caption: originalRequest.caption || inputData.caption,\n        telegram_id: originalRequest.telegram_id || inputData.telegram_id,\n        source: originalRequest.source || inputData.source || 'telegram'\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        800
+      ],
+      "id": "__NODE_14__",
+      "name": "Unify Output"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.response_url }}",
+        "authentication": "REDACTED",
+        "genericAuthType": "REDACTED",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        912,
+        656
+      ],
+      "id": "__NODE_15__",
+      "name": "Fetch Video Result1",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__HTTP_HEADER_CRED_ID",
+          "name": "HTTP Header Auth Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH price_data AS (\n  SELECT\n    bp.id AS business_id,\n    trim(split_part(item, ':', 1)) AS product_name,\n    trim(split_part(item, ':', 2)) AS price_text\n  FROM table_5 bp,\n  unnest(string_to_array(bp.catalogue_summary, ';')) AS item\n  WHERE bp.id = '[ID]'\n    AND trim(split_part(item, ':', 2)) != ''\n),\nparsed AS (\n  SELECT\n    business_id,\n    product_name,\n    price_text,\n    -- Extract numeric value: remove \u20a6, commas, spaces\n    NULLIF(regexp_replace(price_text, '[^0-9.]', '', 'g'), '')::numeric AS price_numeric\n  FROM table_6\n)\nUPDATE table_7 pi\ncolumn_2 p.price_numeric,\n  price_label = trim(p.price_text)\nFROM table_8 p\nWHERE pi.business_id = p.business_id\n  AND (\n    LOWER(pi.display_name) = LOWER(p.product_name)\n    OR LOWER(pi.product_name) = LOWER(p.product_name)\n  )\n  AND pi.price IS NULL\nRETURNING pi.id, pi.display_name, p.price_numeric, p.price_text;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1136,
+        1360
+      ],
+      "id": "__NODE_16__",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Unpack AI Agent Instruction1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Source Image Context": {
+      "main": [
+        [
+          {
+            "node": "Route to Sync or Async1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fail on Video Error": {
+      "main": [
+        [
+          {
+            "node": "Is Video Ready?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unpack AI Agent Instruction1": {
+      "main": [
+        [
+          {
+            "node": "Get Media Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route to Sync or Async1": {
+      "main": [
+        [
+          {
+            "node": "Execute fal.ai Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute fal.ai Request1": {
+      "main": [
+        [
+          {
+            "node": "Parse Initial Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Initial Response1": {
+      "main": [
+        [
+          {
+            "node": "Is Async (Video)?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Async (Video)?1": {
+      "main": [
+        [
+          {
+            "node": "Wait for Video Gen1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Video Gen1": {
+      "main": [
+        [
+          {
+            "node": "Poll Video Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Video Ready?1": {
+      "main": [
+        [
+          {
+            "node": "Fetch Video Result1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait for Video Gen1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Video Status": {
+      "main": [
+        [
+          {
+            "node": "Fail on Video Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Media Context": {
+      "main": [
+        [
+          {
+            "node": "Merge Source Image Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Video Result1": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "output": "Here\u2019s a video of someone rocking your agbada.  \n\n[BUFFER: Gimme a sec...]  \n[FAL_MEDIA_REQUEST: {\"generation_mode\":\"image_to_video\",\"input\":{\"prompt\":\"a confident man wearing a stylish agbada, walking and turning, vibrant colors\",\"start_image_url\":\"[URL]\"}}]",
+          "gen_mode": "image_to_video",
+          "gen_prompt": "a confident man wearing a stylish agbada, walking and turning, vibrant colors",
+          "caption": "Here you go!",
+          "image_id": "",
+          "phone_no": null,
+          "source": "telegram",
+          "telegram_id": "996797292"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "485dfac4-09b6-498a-aa76-f6963e28c936",
+  "versionCounter": 599,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-13T10:31:01.924Z",
+      "createdAt": "2026-04-13T10:31:01.924Z",
+      "role": "workflow:owner",
+      "workflowId": "nGFDo5PTcLoEUrnE",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.860246+00:00",
+    "original_name": "Fal Tool",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "Output": "table_1",
+      "structured": "table_2",
+      "output": "table_3",
+      "msq_media_context": "table_4",
+      "msq_business_profiles": "table_5",
+      "price_data": "table_6",
+      "msq_product_images": "table_7",
+      "parsed": "table_8"
+    },
+    "columns_renamed": {
+      "platform_user_id": "column_1",
+      "price": "column_2"
+    }
+  }
+}

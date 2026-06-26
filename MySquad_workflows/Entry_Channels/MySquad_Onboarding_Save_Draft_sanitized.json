@@ -1,0 +1,142 @@
+{
+  "updatedAt": "2026-06-01T13:53:50.663Z",
+  "createdAt": "2026-06-01T13:53:27.225Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad_Onboarding_Save_Draft",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "onboarding-save-draft",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "__NODE_1__",
+      "name": "Save Draft Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        48
+      ],
+      "webhookId": "__WEBHOOK_1__"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE table_2\ncolumn_1 $2::jsonb,\n    last_step   = $3::int,\n    updated_at  = now()\ncolumn_2 $1\n  column_3 false\n  column_4 now()\nRETURNING token, last_step",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.body.token || '',\n  JSON.stringify($json.body.data || {}),\n  parseInt($json.body.step || 1)\n] }}"
+        }
+      },
+      "id": "__NODE_2__",
+      "name": "Update table_1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        32,
+        48
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: !!$json.token }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "__NODE_3__",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        272,
+        48
+      ]
+    }
+  ],
+  "connections": {
+    "Save Draft Webhook": {
+      "main": [
+        [
+          {
+            "node": "Update Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Draft": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "670c881a-66d1-4d08-a2b9-c2850cddb24a",
+  "versionCounter": 5,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-06-01T13:53:27.225Z",
+      "createdAt": "2026-06-01T13:53:27.225Z",
+      "role": "workflow:owner",
+      "workflowId": "wiyfEPDghNmZoikY",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 670c881a",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.895932+00:00",
+    "original_name": "MySquad_Onboarding_Save_Draft",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "Draft": "table_1",
+      "msq_onboarding_sessions": "table_2"
+    },
+    "columns_renamed": {
+      "draft_data": "column_1",
+      "token": "column_2",
+      "completed": "column_3",
+      "expires_at": "column_4"
+    }
+  }
+}

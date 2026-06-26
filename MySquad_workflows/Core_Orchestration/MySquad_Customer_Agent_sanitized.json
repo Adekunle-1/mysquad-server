@@ -1,0 +1,830 @@
+{
+  "updatedAt": "2026-06-08T15:58:21.580Z",
+  "createdAt": "2026-04-16T15:30:14.106Z",
+  "id": "__WORKFLOW_ID__",
+  "name": "MySquad Customer Agent",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\"tenant_id\":\"uuid\",\"business_id\":\"uuid\",\"chat_id\":\"813122587\",\"sender_id\":\"813122587\",\"bot_token\":\"token\",\"conversation_id\":\"uuid\",\"text\":\"I want to order jollof rice\",\"message_type\":\"text\",\"display_name\":\"Ada\",\"username\":\"\",\"image_id\":\"\",\"caption\":\"\",\"source\":\"telegram\"}"
+      },
+      "id": "__NODE_1__",
+      "name": "Incoming Customer Payload",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        6384,
+        4960
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT tc.*,\n  pi.bot_username  AS bot_username,\n  bp.store_token   AS store_token,\n  bp.store_slug    AS store_slug,\n  (\n    SELECT json_agg(json_build_object('key', m.key, 'value', m.value))\n    FROM table_1 m\n    WHERE m.business_id = tc.business_id\n      AND m.is_active = true\n      AND (m.expires_at IS NULL OR m.expires_at > now())\n  ) as agent_memories,\n  cu.notes AS customer_profile_notes\nFROM table_2 tc\nLEFT JOIN table_3 pi\n  ON pi.business_id = tc.business_id\n  AND pi.platform = 'telegram'\n  AND pi.is_active = true\nLEFT JOIN table_4 bp\n  ON bp.id = tc.business_id\nLEFT JOIN table_5 cu\n  ON cu.business_id = tc.business_id\n  AND cu.platform = $3::text\n  AND cu.platform_id = $4::text\nWHERE tc.tenant_id   = $1::uuid\n  AND tc.business_id = $2::uuid",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Incoming Customer Payload').first().json.tenant_id,\n  $('Incoming Customer Payload').first().json.business_id,\n  $('Incoming Customer Payload').first().json.source,\n  $('Incoming Customer Payload').first().json.sender_id\n] }}"
+        }
+      },
+      "id": "__NODE_2__",
+      "name": "Load Business Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        6624,
+        4960
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx      = $('Load Business Context').first().json;\nconst incoming = $('Incoming Customer Payload').first().json;\n\nfunction safeParse(v, fb) {\n  if (v === null || v === undefined || v === '') return fb;\n  if (typeof v === 'string') { try { return JSON.parse(v) ?? fb; } catch(e) { return fb; } }\n  return v;\n}\nfunction asArray(v)  { const p = safeParse(v, []); return Array.isArray(p) ? p : []; }\nfunction asObject(v) { const p = safeParse(v, {}); return (p && typeof p === 'object' && !Array.isArray(p)) ? p : {}; }\nfunction getMemory(memories, key) { const r = memories.find(m => m && m.key === key); return r ? String(r.value || '') : ''; }\n\nconst toneProfile   = asObject(ctx.tone_profile);\nconst agentRulesRaw = ctx.agent_rules?.rules || ctx.agent_rules || [];\nconst agentRules    = Array.isArray(agentRulesRaw) ? agentRulesRaw : asArray(agentRulesRaw);\nconst memories      = asArray(ctx.agent_memories);\nconst customerProfileNotes = ctx.customer_profile_notes || null;\n\nconst agentName      = ctx.agent_name        || 'Assistant';\nconst businessName   = ctx.business_name     || 'this business';\nconst businessType   = ctx.business_type     || '';\nconst businessDesc   = ctx.business_description || '';\nconst businessLoc    = ctx.business_location || '';\nconst operatingHours = asObject(ctx.operating_hours);\nconst operatingDays  = asArray(ctx.operating_days);\nconst catalogueSummary = ctx.catalogue_summary || 'No catalogue available yet.';\n\nconst businessMode = ctx.business_mode || getMemory(memories, 'business_mode') || 'product_only';\nconst isService    = businessMode === 'service_only';\nconst isHybrid     = businessMode === 'hybrid_product_led' || businessMode === 'hybrid_service_led';\nconst hasProduct   = businessMode === 'product_only' || isHybrid;\nconst hasService   = isService || isHybrid;\nconst ordersLabel  = isService ? 'bookings' : 'orders';\nconst orderLabel   = isService ? 'booking'  : 'order';\nconst catalogueLabel = isService && !hasProduct ? 'SERVICES OFFERED'\n  : hasProduct && !isService ? 'PRODUCT CATALOGUE' : 'PRODUCTS AND SERVICES';\nconst scopeLabel = isService && !hasProduct ? 'services'\n  : hasProduct && !isService ? 'products' : 'products and services';\n\nconst paymentMode         = getMemory(memories, 'payment_mode')               || 'pay_before';\nconst depositPolicy       = getMemory(memories, 'deposit_policy')              || '';\nconst cancellationPolicy  = getMemory(memories, 'cancellation_policy')         || '';\nconst typicalDuration     = getMemory(memories, 'typical_session_duration')    || '';\n\nconst rulesText = agentRules.length ? agentRules.map(r => `- ${r}`).join('\\n') : 'None.';\n\n// \u2500\u2500 Store link \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst storeToken  = ctx.store_token  || '';\nconst storeSlug   = ctx.store_slug   || '';\nconst botUsername = ctx.bot_username || '';\nconst waNumber    = (ctx.whatsapp_no || '').replace(/\\D/g, '');\nconst platform    = (incoming.source || 'telegram').toLowerCase();\nconst chatId      = incoming.chat_id || incoming.sender_id || '';\n\nconst baseUrl = storeSlug\n  ? `[URL]\n  : storeToken\n  ? `[URL]\n  : '';\n\nconst storeUrl = baseUrl\n  ? baseUrl + '&plt=' + platform\n    + (platform === 'telegram' && botUsername ? '&bot=' + botUsername : '')\n    + (platform === 'whatsapp'  && waNumber   ? '&wa='  + waNumber   : '')\n    + '&cid=' + encodeURIComponent(chatId)\n  : '';\n\n// \u2500\u2500 Hours & reach \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nlet hoursText = '';\nif (operatingDays.length) {\n  hoursText = 'Operating days: ' + operatingDays.join(', ');\n  if (operatingHours.open && operatingHours.close)\n    hoursText += ` (${operatingHours.open} \u2013 ${operatingHours.close})`;\n}\nconst howToReach = asObject(ctx.how_customers_reach);\nlet reachText = '';\nif (Object.keys(howToReach).length) {\n  reachText = '\\nHOW TO REACH US:\\n' + Object.entries(howToReach).map(([k,v]) => `- ${k}: ${v}`).join('\\n');\n}\n\nlet customerProfileBlock = '';\nif (customerProfileNotes) {\n  customerProfileBlock = `\\nSAVED PROFILE FOR THIS CUSTOMER:\\n${customerProfileNotes}\\nUse this, do not ask for information already saved here unless the customer wants to update table_6\\n`;\n}\n\nconst customerName = incoming.display_name || incoming.username || 'Customer';\nconst sep = '\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550';\n\nconst systemPrompt = `You represent ${businessName}. You are ${agentName}, a warm and capable customer assistant. You handle everything \u2014 browsing, enquiries, prices, AND placing orders, payments, and booking requests. Handle it all in one conversation without asking customers to repeat themselves.\n\n${sep}\nBUSINESS CONTEXT\n${sep}\nBusiness: ${businessName}\n${businessType   ? 'Type: '     + businessType   : ''}\n${businessDesc   ? 'About: '    + businessDesc   : ''}\n${businessLoc    ? 'Location: ' + businessLoc    : ''}\n${hoursText}\n${reachText}\n\n${catalogueLabel}:\n${catalogueSummary}\n\nBusiness rules:\n${rulesText}\n${customerProfileBlock}\nCUSTOMER: ${customerName}\nChat ID: ${incoming.chat_id}\n\n${sep}\nVOICE & PERSONALITY\n${sep}\nENGLISH REGISTER:\nSound like a warm, sharp Nigerian business assistant, not a chatbot.\n- Lead with the answer. Never open with a filler word.\n  Good: \"Your order MSQ-A3K7F2 is being prepared \ud83d\udd04\"\n  Bad: \"Sure! Here is your order status.\"\n- Warmth comes from table_7 and tone, not openers.\n- Use contractions: \"I'll\", \"you'll\", \"it's\", \"we've\", \"here's\"\n- 1-3 sentences for simple questions. More only when genuinely needed.\n\nPIDGIN REGISTER:\nMatch the customer's Pidgin naturally.\n- \"Your order don land!\" not \"Your order has been placed.\"\n- \"Abeg which order you dey talk about?\" not \"Could you specify the order?\"\nDetect: dey, abeg, wetin, oya, wahala, sha, una, dem, na, abi, wan, e don, how far, no wahala.\n2+ markers \u2192 full Pidgin. NEVER mix registers in one reply.\n\nBANNED PHRASES \u2014 never open with:\n\"Sure!\", \"Of course!\", \"Absolutely!\", \"Certainly!\", \"Great!\", \"Great choice!\"\n\"I understand your concern\", \"I apologize for any inconvenience\"\n\"I have successfully\", \"Is there anything else I can help you with?\"\n\"Thank you for your patience\"\n\nEMOJI: Functional only. \u2705 for confirmations. One per message max.\n\nIDENTITY: Never say you are a bot or AI. Never share owner's personal details.\n\n${sep}\nCONVERSATION CONTINUITY\n${sep}\nYou handle the full customer journey in one thread \u2014 discovery through to order.\nNEVER ask a customer to repeat information they already gave you in this conversation.\nIf a customer confirmed items and prices and then says \"Sure\", \"Yes\", \"Go ahead\", or any confirmation \u2014 proceed with the order collection using what's already in the conversation. Do not ask what they want to order.\nIf you gave prices and the customer confirms, immediately move to collecting the next missing piece: delivery address, delivery type, or special notes.\n\n${sep}\nPRODUCT QUESTIONS \u2014 ROUTING RULES\n${sep}\n1. \"What do you sell?\" / \"What do you have?\" \u2192 answer conversationally from table_8 No store link unless they ask.\n2. \"Do you have X?\" / \"How much is X?\" \u2192 answer directly from table_8\n3. \"Show me your products\" / \"Can I see photos?\" / \"Send your catalogue\" / \"catalogue link\" / \"store link\" \u2192 output the store link directly from table_9 PAGE section below. Do NOT call any tool.\n4. \"Show me [specific product]\" / \"Send a photo of X\" \u2192 use Send Catalogue Photos Tool.\n5. Never send the store link for a general text question \u2014 answer first.\n6. NEVER call Send Catalogue Photos Tool for a general browse request. The store link is the answer.\n\n${sep}\nSTORE PAGE\n${sep}\n${storeUrl\n  ? `Store link: ${storeUrl}\nSend this for rule 3 browsing requests. Copy it exactly \u2014 all parameters after ? are required.\nAfter sending: \"Here you go \ud83d\udc47 Browse and tap to order anything you like.\"`\n  : 'No store page configured yet.'}\n\n${sep}\nORDER PLACEMENT\n${sep}\n${hasService ? `SERVICE BOOKINGS (delivery_type = \"appointment\"):\nCollect conversationally \u2014 2 questions at a time:\n1. Service required\n2. Preferred date and time\n3. Location (customer's or business's)\n4. Contact name and phone\n5. Special notes\n${typicalDuration ? 'Typical session duration: ' + typicalDuration : ''}\n${depositPolicy   ? 'Deposit policy: '           + depositPolicy   : ''}\n${cancellationPolicy ? 'Cancellation policy: '   + cancellationPolicy : ''}\nSummarise and confirm before placing.` : ''}\n${hasProduct ? `PRODUCT ORDERS:\nCollect conversationally \u2014 never dump all questions at once. 2 questions max per message.\n\nSTEP 1 \u2014 SPECIFICATIONS:\nBefore asking about delivery, always check if the item needs specs.\nItems that need specs: clothing, shoes, accessories, custom/made-to-order items, food with options.\nAsk about: size, colour, measurements, design preference, flavour, quantity variants \u2014 whatever applies to the specific item they ordered.\nIf the catalogue lists sizes or variants, ask the customer to pick from table_10\nIf it's custom/bespoke, collect all measurements needed for the item.\nOnly skip specs if the item clearly has none (e.g. a fixed digital product or standard item with no variants).\n\nSTEP 2 \u2014 DELIVERY:\nAsk: pickup or delivery?\nIf delivery: collect full address (street, city, state, landmark, recipient name and phone).\n\nSTEP 3 \u2014 PAYMENT:\n${paymentMode === 'pay_on_delivery' ? 'Pay on delivery \u2014 let customer know.' :\n  paymentMode === 'both'            ? 'Ask if they prefer to pay before or on delivery.' :\n  'After owner confirms, customer will receive bank details.'}\n\nPut ALL specs (size, colour, measurements, notes) into table_11 when calling Place Order.\nNever place the order without first collecting specs for items that need them.` : ''}\n\nSummarise the full order and ask for confirmation before calling Place Order.\nOnly call Place Order after explicit confirmation.\nAfter placing: share order number, tell them the business will confirm shortly.\n\n${sep}\nORDER STATUS\n${sep}\n- pending / placed \u2192 \"Your order is being reviewed.\"\n- confirmed \u2192 \"Confirmed \u2705 \u2014 it's being prepared.\"\n- preparing / ready \u2192 \"Being prepared and almost ready!\"\n- dispatched \u2192 \"On its way \ud83d\ude9a \u2014 you'll get a delivery notification. Already received it? Tap the confirm button.\"\n- delivered \u2192 \"Delivered \u2705 \u2014 hope you love it!\"\n- cancelled \u2192 \"This order was cancelled. Want to place a new one?\"\n\nIf status is dispatched/delivered \u2014 those are valid completed states. Never say you can't find the order.\n\nCUSTOMER FOLLOWING UP ON UNCONFIRMED ORDER:\nIf a customer sends a follow-up like \"still waiting\", \"any update?\", \"when will you confirm?\"\nand their order is still in placed/pending/enquiry status \u2014 do this in ONE step:\n1. Tell the customer warmly: \"Your order is still being reviewed \u2014 I'll nudge the team right now to get it sorted.\"\n2. Call Escalate Tool with this simple message: \"A customer is following up on their pending order. Please check and confirm.\"\n   The system will automatically attach the order details for the owner.\n   Do NOT call Check Order Status Tool first \u2014 respond to the customer in a single turn.\n\n${sep}\nQUOTE-BASED PRICING\n${sep}\nDetect if business is quote-based: memory has pricing_model = \"quote_based\" OR catalogue has no prices.\nSTEP 1 \u2014 Collect all specs conversationally (2-3 questions at a time) before mentioning price.\nSTEP 2 \u2014 Escalate: \"Let me check the price with ${businessName} and get back to you shortly \ud83d\ude4f\" then call Escalate Tool with ALL specs.\nSTEP 3 \u2014 After owner quotes, watch for any confirmation signal to proceed.\nSTEP 4 \u2014 Call Place Order immediately on confirmation with quoted price and all specs in customer_notes.\nNever invent a price. Never say you can't help \u2014 always frame as checking.\n\n${sep}\nIMAGE HANDLING\n${sep}\nWhen message_type = 'image' or image_id is set, the customer sent a photo.\nRead image_description, product_specs, is_product_reference from table_12 text field.\n\nCASE A \u2014 Business's own product photo: match to catalogue \u2192 confirm \u2192 Place Order on confirmation.\nCASE B \u2014 Reference photo (is_product_reference: true): match specs to catalogue \u2192 suggest closest match.\nCASE C \u2014 Custom order photo (quote-based business): extract specs \u2192 use as quote-based pricing starting point.\n\nNever say you cannot see their image. Always acknowledge and use the vision context.\n\n${sep}\nPAYMENT PROOF\n${sep}\nUse Submit Payment Proof Tool ONLY when:\n- Customer explicitly sends a financial image AND\n- You have a confirmed order number.\nIf image description does NOT say \"User sent a financial image\" \u2014 do NOT treat it as payment.\nNever invent an order number.\n\n${sep}\nCANCELLATION\n${sep}\nCancel Order Tool works only before payment is confirmed.\nIf no rows returned: \"This ${orderLabel} can no longer be cancelled because payment has already been confirmed. Please contact ${businessName} directly.\"\n\n${sep}\nSAVE CUSTOMER PROFILE\n${sep}\nCall Save Customer Profile Tool after collecting measurements, preferences, or recurring requirements.\nWrite as one readable string. On repeat visits, check SAVED PROFILE block above before asking.\n\n${sep}\nTOOL ROUTING\n${sep}\nBrowse Catalogue Tool \u2192 product search, image matching, availability checks\nSend Catalogue Photos Tool \u2192 specific product photo request only\nBusiness Info Tool \u2192 hours, location, delivery zones, policies\nPlace Order Tool \u2192 after explicit confirmation only\nCheck Order Status Tool \u2192 order status queries\nCancel Order Tool \u2192 cancellation requests\nSubmit Payment Proof Tool \u2192 financial image + order number\nSave Customer Profile Tool \u2192 measurements, preferences, recurring requirements\nEscalate Tool \u2192 use for anything you cannot answer confidently, order follow-ups, price checks, custom requests, or customer feedback for the owner\n  CRITICAL: Before escalating a price question, check the catalogue summary above first. If the price is mentioned anywhere in the catalogue (even as text like \u20a665,000), answer it directly \u2014 do NOT escalate. Only escalate prices genuinely absent from table_12 catalogue.\n  IMPORTANT: Always rephrase to third-person natural language before calling.\n  Never pass the customer's literal words if they reference themselves.\n  Good: \"A customer is asking if there will be any promos this month.\"\n  Good: \"A customer says the red top is no longer showing in the catalogue.\"\n  Bad:  \"would there be any promos this month?\"\n  Bad:  \"Tell the owner that the red top is not in their catalogue\"\n  The owner reads these messages directly \u2014 they should read naturally from table_13 third-party perspective.\n\n${sep}\nHARD RULES\n${sep}\nNever make up prices, products, or information not in the catalogue.\nNever share the owner's personal details.\nNever accept payments directly.\nNever fabricate URLs, phone numbers, or addresses.`;\n\nreturn {\n  json: {\n    system_prompt:   systemPrompt,\n    text:            incoming.text    || incoming.caption || '',\n    caption:         incoming.caption || '',\n    tenant_id:       incoming.tenant_id,\n    business_id:     incoming.business_id,\n    chat_id:         incoming.chat_id,\n    sender_id:       incoming.sender_id,\n    display_name:    incoming.display_name || '',\n    username:        incoming.username     || '',\n    source:          incoming.source       || 'telegram',\n    message_type:    incoming.message_type || 'text',\n    image_id:        incoming.image_id     || '',\n    bot_token:       incoming.bot_token    || ctx.bot_token || '',\n    conversation_id: incoming.conversation_id || '',\n    is_owner:        false\n  }\n};"
+      },
+      "id": "__NODE_3__",
+      "name": "Build Customer Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6864,
+        4960
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "options": {
+          "systemMessage": "={{ $json.system_prompt }}"
+        }
+      },
+      "id": "__NODE_4__",
+      "name": "Customer Agent \u2014 Enquiry & Orders",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        7104,
+        4960
+      ],
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "id": "__NODE_5__",
+      "name": "Groq Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        7040,
+        5168
+      ],
+      "credentials": {
+        "groqApi": {
+          "id": "__GROQ_CRED_ID",
+          "name": "Groq API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=cust_{{ $json.chat_id }}_{{ $json.tenant_id }}_{{ $json.business_id }}",
+        "tableName": "msq_chat_histories",
+        "contextWindowLength": 6
+      },
+      "id": "__NODE_6__",
+      "name": "Customer Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        7200,
+        5168
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT co.order_number, co.items, co.total_amount, co.delivery_type,\n       co.delivery_address, co.customer_notes, co.status\nFROM table_14 co\nWHERE co.customer_chat_id = $1\n  AND co.tenant_id = $2::uuid\n  AND co.business_id = $3::uuid\n  AND co.created_at > now() - interval '5 minutes'\nORDER BY co.created_at DESC\nLIMIT 1",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Customer Payload').first().json.chat_id, $('Incoming Customer Payload').first().json.tenant_id, $('Incoming Customer Payload').first().json.business_id] }}"
+        }
+      },
+      "id": "__NODE_7__",
+      "name": "Check New Orders",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        7440,
+        4960
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOutput = $('Customer Agent \u2014 Enquiry & Orders').first().json.output || '';\nconst newOrder    = $('Check New Orders').first().json;\nconst incoming    = $('Incoming Customer Payload').first().json;\nconst ctx         = $('Load Business Context').first().json;\n\nconst platform    = (incoming.source || 'telegram').toLowerCase();\nconst chatId      = incoming.chat_id || incoming.sender_id || '';\nconst botUsername = ctx.bot_username || '';\nconst waNumber    = (ctx.whatsapp_no || '').replace(/\\D/g, '');\n\nfunction patchStoreUrl(text) {\n  return text.replace(\n    /(https?:\\/\\/[^\\s\"'<>]+\\/webhook\\/store\\?[^\\s\"'<>]*)/g,\n    function(fullUrl) {\n      if (fullUrl.includes('&plt=') || fullUrl.includes('?plt=')) return fullUrl;\n      let url = fullUrl;\n      url += '&plt=' + platform;\n      if (platform === 'telegram' && botUsername) url += '&bot=' + botUsername;\n      if (platform === 'whatsapp'  && waNumber)   url += '&wa='  + waNumber;\n      if (chatId) url += '&cid=' + encodeURIComponent(chatId);\n      return url;\n    }\n  );\n}\n\nconst patchedOutput = patchStoreUrl(agentOutput);\n\n// New order \u2014 only flag on the turn the order was just placed\nconst hasNewOrder = !!newOrder && !!newOrder.order_number\n  && patchedOutput.includes(newOrder.order_number);\n\nlet orderSummary = null;\nif (hasNewOrder && newOrder.items) {\n  try {\n    const items = typeof newOrder.items === 'string'\n      ? JSON.parse(newOrder.items) : newOrder.items;\n    if (Array.isArray(items)) {\n      orderSummary = items.map(item => {\n        const qty   = item.quantity  || 1;\n        const name  = item.name      || 'Item';\n        const price = item.unit_price\n          ? ' \u2014 \u20a6' + Number(item.unit_price).toLocaleString() : '';\n        return qty + 'x ' + name + price;\n      }).join(', ');\n      if (newOrder.total_amount) {\n        orderSummary += ' (Total: \u20a6' + Number(newOrder.total_amount).toLocaleString() + ')';\n      }\n    }\n  } catch(e) { orderSummary = null; }\n  if (newOrder.customer_notes && newOrder.customer_notes.trim()) {\n    orderSummary = (orderSummary || '') + '\\nSpecs: ' + newOrder.customer_notes.trim();\n  }\n}\n\n// Cancelled order \u2014 detect from table_15 output mentioning an MSQ number + cancel\nconst cancelMatch = patchedOutput.match(/MSQ-([A-Z0-9]+)[^]*?cancel/i)\n  || patchedOutput.match(/cancel[^]*?MSQ-([A-Z0-9]+)/i);\nconst hasCancelledOrder    = !!cancelMatch;\nconst cancelledOrderNumber = hasCancelledOrder ? 'MSQ-' + cancelMatch[1] : null;\n\nreturn {\n  json: {\n    output:                 patchedOutput,\n    response_type:          'text',\n    message_type_in:        incoming.message_type || 'text',\n    has_new_order:          hasNewOrder,\n    order_number:           hasNewOrder ? newOrder.order_number : null,\n    order_summary:          orderSummary,\n    has_cancelled_order:    hasCancelledOrder,\n    cancelled_order_number: cancelledOrderNumber,\n    bot_token:              incoming.bot_token || '',\n    chat_id:                incoming.chat_id,\n    conversation_id:        incoming.conversation_id,\n    tenant_id:              incoming.tenant_id,\n    user_message:           incoming.text || incoming.caption || '',\n    is_owner:               false,\n  }\n};"
+      },
+      "id": "__NODE_8__",
+      "name": "Build Final Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7648,
+        4960
+      ]
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Place a new order or book a service appointment for the customer. Only call this after the customer has explicitly confirmed.\n\nPARAMETERS:\n- items (JSON array): [{\"name\":\"service or item name\",\"quantity\":1,\"unit_price\":5000}]\n- total_amount (number): Total cost\n- delivery_type (string): \"pickup\" | \"delivery\" | \"appointment\"\n- delivery_address (JSON): location/contact object or {} if pickup\n- scheduled_for (string): ISO datetime or empty string\n- customer_notes (string): Special instructions\n\nWHAT TO COLLECT BEFORE PLACING:\nFor pickup: items and quantities only. Pass delivery_address as {} and scheduled_for as \"\".\nFor delivery: items, recipient name, recipient phone, full address.\nFor appointment: service, date/time, location, contact name and phone.\nSummarise and confirm before placing. Only call after explicit confirmation.\n\nRESPONSE after success:\nEnglish: \"Order MSQ-XXXXXX placed! The business will confirm shortly \ud83c\udf89\"\nPidgin: \"MSQ-XXXXXX don land! The business go confirm am soon \ud83c\udf89\"",
+        "operation": "executeQuery",
+        "query": "INSERT INTO table_14 (customer_chat_id, tenant_id, business_id, order_number, items, total_amount, delivery_type, delivery_address, scheduled_for, customer_notes) VALUES ($1, (SELECT tenant_id FROM table_4 column_1 $2::uuid), $2::uuid, msq_generate_order_number($2::uuid), $3::jsonb, $4::numeric, $5, $6::jsonb, NULLIF($7, '')::timestamptz, $8) RETURNING id, customer_chat_id, tenant_id, business_id, order_number, items, total_amount, delivery_type, delivery_address, scheduled_for, customer_notes, status, created_at",
+        "options": {
+          "queryReplacement": "={{ [$json.chat_id, $json.business_id, JSON.stringify($fromAI('items','JSON array [{name, quantity, unit_price}]','json')||[]), $fromAI('total_amount','Total amount as a number','number'), $fromAI('delivery_type','pickup or delivery or appointment','string'), JSON.stringify($fromAI('delivery_address','JSON location/contact object or {} if pickup','json')||{}), $fromAI('scheduled_for','ISO datetime or empty string','string')||'', $fromAI('customer_notes','Special instructions or empty string','string')] }}"
+        }
+      },
+      "id": "__NODE_9__",
+      "name": "Place Order Tool",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        7584,
+        5168
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Check status of customer's orders.\n\nWHEN TO USE: Customer asks about order status, order number, or \"where is my order?\"\nReturns all non-cancelled orders. Present naturally.",
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(\n  json_agg(row_to_json(t)),\n  '[]'::json\n) AS results\nFROM (\n  SELECT order_number, status, payment_status, items, total_amount,\n         delivery_type, delivery_address, customer_notes, created_at,\n         dispatched_at, delivered_at\n  FROM table_14\n  column_2 $1\n    column_3 $2::uuid\n    column_4 $3::uuid\n    AND status NOT IN ('cancelled')\n  ORDER BY created_at DESC\n  LIMIT 5\n) t",
+        "options": {
+          "queryReplacement": "={{ [$json.chat_id, $json.tenant_id, $json.business_id] }}"
+        }
+      },
+      "id": "__NODE_10__",
+      "name": "Check Order Status Tool",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        7744,
+        5168
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Cancel a customer's order. Works only before payment is confirmed.\nIf no rows returned: first call Check Order Status Tool to find out why. If the order status is already 'cancelled', tell the customer their order was already cancelled. If the status is 'confirmed' and payment_status is 'confirmed', tell them it can no longer be cancelled because payment has already been confirmed and they should contact the business directly. If the order is dispatched or delivered, tell them it's too late to cancel.\nFor 'already_cancelled': respond with something like \"Looks like that one was already cancelled; no worries though, happy to help you place a new order whenever you're ready.\" No \u2705 emoji. No \"Anything else I can help you with?\".\nDO NOT say you will notify the owner.",
+        "operation": "executeQuery",
+        "query": "WITH cancelled AS (\n  UPDATE table_14\n  column_5 'cancelled', updated_at = now()\n  column_2 $1\n    column_3 $2::uuid\n    column_4 $3::uuid\n    column_6 $4\n    AND status IN ('enquiry', 'placed', 'pending', 'confirmed')\n    AND payment_status NOT IN ('confirmed')\n  RETURNING order_number, status, 'cancelled_now' AS result\n)\nSELECT COALESCE(\n  (SELECT json_agg(row_to_json(c)) FROM table_16 c),\n  (\n    SELECT json_agg(json_build_object(\n      'order_number', order_number,\n      'status', status,\n      'payment_status', payment_status,\n      'result', 'already_' || status\n    ))\n    FROM table_14\n    column_2 $1\n      column_3 $2::uuid\n      column_4 $3::uuid\n      column_6 $4\n  ),\n  '[]'::json\n) AS results",
+        "options": {
+          "queryReplacement": "={{ [$json.chat_id, $json.tenant_id, $json.business_id, $fromAI('order_number','The MSQ-XXXXXX order number to cancel','string')] }}"
+        }
+      },
+      "id": "__NODE_11__",
+      "name": "Cancel Order Tool",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        7904,
+        5168
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Record payment proof submission. Use ONLY when customer sends a financial image AND you have a confirmed order number.",
+        "operation": "executeQuery",
+        "query": "WITH updated AS (\n  UPDATE table_14\n  column_7 'proof_submitted',\n      payment_proof_url = $3,\n      updated_at = now()\n  column_2 $1\n    column_3 $2::uuid\n    column_4 $4::uuid\n    column_6 $5\n    AND payment_status IN ('unpaid', 'proof_submitted')\n  RETURNING order_number, payment_status, total_amount\n)\nSELECT COALESCE(\n  (SELECT json_agg(row_to_json(u)) FROM table_17 u),\n  '[]'::json\n) AS results",
+        "options": {
+          "queryReplacement": "={{ [$json.chat_id, $json.tenant_id, $json.image_id||'payment screenshot submitted', $json.business_id, $fromAI('order_number','The MSQ-XXXXXX order number','string')] }}"
+        }
+      },
+      "id": "__NODE_12__",
+      "name": "Submit Payment Proof Tool",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        7584,
+        5360
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Save or update table_18 profile \u2014 measurements, preferences, recurring requirements. Write as one readable string.",
+        "operation": "executeQuery",
+        "query": "WITH saved AS (\n  UPDATE table_5\n  column_8 $4\n  column_3 $1::uuid\n    column_4 $2::uuid\n    column_9 $3::text\n    column_10 $5::text\n  RETURNING business_id, platform_id, notes\n)\nSELECT COALESCE(\n  (SELECT json_agg(row_to_json(s)) FROM table_19 s),\n  '[]'::json\n) AS results",
+        "options": {
+          "queryReplacement": "={{ [$json.tenant_id, $json.business_id, $json.source, $fromAI('notes','Full profile notes as one readable string','string'), $json.sender_id] }}"
+        }
+      },
+      "id": "__NODE_13__",
+      "name": "Save Customer Profile Tool",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        7744,
+        5360
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Browse product catalogue. Use for product search, image matching, and availability checks.",
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(\n  json_agg(row_to_json(t)),\n  '[]'::json\n) AS results\nFROM (\n  SELECT display_name, canonical_name, category, price, price_label,\n         is_available, minio_url, sort_order\n  FROM table_20\n  column_4 $1::uuid\n    column_11 'product'\n    column_12 true\n    AND (\n      $2 = ''\n      OR to_tsvector('english', COALESCE(display_name, product_name, ''))\n           @@ plainto_tsquery('english', $2)\n      OR LOWER(COALESCE(display_name, product_name, '')) LIKE '%' || LOWER($2) || '%'\n      OR LOWER(COALESCE(category, '')) LIKE '%' || LOWER($2) || '%'\n    )\n  ORDER BY sort_order ASC, is_available DESC\n  LIMIT 10\n) t",
+        "options": {
+          "queryReplacement": "={{ [$('Incoming Customer Payload').first().json.business_id, $fromAI('search_text','What to search for. Empty string returns all.','string')||''] }}"
+        }
+      },
+      "id": "__NODE_14__",
+      "name": "Browse Catalogue Tool",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        7904,
+        5360
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "=Send a product photo to the customer.\nWHEN TO USE: Customer asks for a photo of a SPECIFIC product.\nWHEN NOT TO USE: General browsing (send store link instead).\nPARAMETERS: filter (specific product name), header_text (optional intro).",
+        "workflowId": {
+          "__rl": true,
+          "value": "0cRXCDnv9NhCkikp",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/0cRXCDnv9NhCkikp",
+          "cachedResultName": "MySquad Send Catalogue Tool"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $json.tenant_id }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "bot_token": "REDACTED",
+            "filter": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('filter','Specific product name or keyword','string')||'' }}",
+            "header_text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('header_text','Optional intro','string')||'' }}",
+            "business_id": "REDACTED",
+            "source": "={{ $json.source }}",
+            "wa_instance": "={{ $json.wa_instance }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "bot_token",
+              "displayName": "bot_token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "filter",
+              "displayName": "filter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "header_text",
+              "displayName": "header_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "business_id",
+              "displayName": "business_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "wa_instance",
+              "displayName": "wa_instance",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "__NODE_15__",
+      "name": "Send Catalogue Photos Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        8064,
+        5168
+      ]
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Get business details: hours, location, delivery zones, payment methods, policies.\n\nWHEN TO USE:\n- Customer asks about opening hours or location\n- Customer asks about delivery options or zones\n- Customer asks about payment methods or return policy\n- Customer asks how to reach the business\n\nIf the tool returns empty results, tell the customer you don't have those details on file and offer to escalate the question.",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "msq_business_profiles",
+          "mode": "list",
+          "cachedResultName": "msq_business_profiles"
+        },
+        "returnAll": true,
+        "where": {
+          "values": [
+            {
+              "column": "tenant_id",
+              "value": "={{ $json.tenant_id }}"
+            },
+            {
+              "column": "id",
+              "value": "={{ $json.business_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "__NODE_16__",
+      "name": "Business Info Tool",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        8224,
+        5168
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CRED_ID",
+          "name": "PostgreSQL Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "=Escalate to the business owner \u2014 use for anything you cannot answer confidently, order follow-ups, price checks for items not in the catalogue, custom requests, or customer feedback.\nPARAMETERS: question_text (rephrased to third person), customer_name.\nAfter calling: tell the customer you've passed it on and they'll hear back shortly.",
+        "workflowId": {
+          "__rl": true,
+          "value": "QZY4H2yBOiE2mQls",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/QZY4H2yBOiE2mQls",
+          "cachedResultName": "MySquad Escalation Handler"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $json.tenant_id }}",
+            "business_id": "REDACTED",
+            "customer_chat_id": "={{ $json.chat_id }}",
+            "customer_name": "={{ $json.display_name }}",
+            "bot_token": "REDACTED",
+            "question_text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('question_text', ``, 'string') }}",
+            "business_name": "={{ $('Load Business Context').first().json.business_name }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "business_id",
+              "displayName": "business_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "customer_chat_id",
+              "displayName": "customer_chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "customer_name",
+              "displayName": "customer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "bot_token",
+              "displayName": "bot_token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "question_text",
+              "displayName": "question_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "business_name",
+              "displayName": "business_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "__NODE_17__",
+      "name": "Escalate",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        8384,
+        5168
+      ]
+    }
+  ],
+  "connections": {
+    "Incoming Customer Payload": {
+      "main": [
+        [
+          {
+            "node": "Load Business Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Business Context": {
+      "main": [
+        [
+          {
+            "node": "Build Customer Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Customer Config": {
+      "main": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer Agent \u2014 Enquiry & Orders": {
+      "main": [
+        [
+          {
+            "node": "Check New Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check New Orders": {
+      "main": [
+        [
+          {
+            "node": "Build Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Place Order Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Order Status Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancel Order Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Payment Proof Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Customer Profile Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Browse Catalogue Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Catalogue Photos Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Info Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalate": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Agent \u2014 Enquiry & Orders",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gmbekEHeofgw6FGi",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "__VERSION_ID__",
+  "activeVersionId": "5ffd2e0d-443c-49ab-8043-7b74a8a8a0bd",
+  "versionCounter": 419,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-16T15:30:14.106Z",
+      "createdAt": "2026-04-16T15:30:14.106Z",
+      "role": "workflow:owner",
+      "workflowId": "wTj8NMMNUYA8aZBx",
+      "projectId": "ir6dYbaAlha8WGmA",
+      "project": {
+        "updatedAt": "2026-01-30T11:59:38.451Z",
+        "createdAt": "2026-01-30T11:25:24.975Z",
+        "id": "ir6dYbaAlha8WGmA",
+        "name": "Orange orangegroups.ai@gmail.com <orangegroups.ai@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d6320d31-a534-40f1-9f67-e1a589e8f288"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version 5ffd2e0d",
+    "description": ""
+  },
+  "_sanitization_metadata": {
+    "sanitized_at": "2026-06-26T13:55:21.834519+00:00",
+    "original_name": "MySquad Customer Agent",
+    "note": "Sensitive data replaced with placeholders.",
+    "tables_renamed": {
+      "msq_agent_memory": "table_1",
+      "msq_tenant_context": "table_2",
+      "msq_platform_integrations": "table_3",
+      "msq_business_profiles": "table_4",
+      "msq_customers": "table_5",
+      "it.": "table_6",
+      "content": "table_7",
+      "catalogue.": "table_8",
+      "STORE": "table_9",
+      "those.": "table_10",
+      "customer_notes": "table_11",
+      "the": "table_12",
+      "a": "table_13",
+      "msq_customer_orders": "table_14",
+      "agent": "table_15",
+      "cancelled": "table_16",
+      "updated": "table_17",
+      "customer": "table_18",
+      "saved": "table_19",
+      "msq_product_images": "table_20"
+    },
+    "columns_renamed": {
+      "id": "column_1",
+      "customer_chat_id": "column_2",
+      "tenant_id": "column_3",
+      "business_id": "column_4",
+      "status": "column_5",
+      "order_number": "column_6",
+      "payment_status": "column_7",
+      "notes": "column_8",
+      "platform": "column_9",
+      "platform_id": "column_10",
+      "image_type": "column_11",
+      "show_on_store": "column_12"
+    }
+  }
+}

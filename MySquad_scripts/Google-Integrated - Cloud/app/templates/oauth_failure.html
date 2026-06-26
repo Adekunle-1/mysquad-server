@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connection Failed</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fef2f2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 48px 40px;
+            max-width: 440px;
+            width: 100%;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+        .icon {
+            width: 64px;
+            height: 64px;
+            background: #ef4444;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+        }
+        .icon svg { width: 32px; height: 32px; stroke: white; fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+        h1 { font-size: 22px; font-weight: 700; color: #111; margin-bottom: 12px; }
+        p { font-size: 15px; color: #555; line-height: 1.6; margin-bottom: 8px; }
+        .reason {
+            margin-top: 16px;
+            padding: 14px;
+            background: #fef2f2;
+            border-radius: 10px;
+            font-size: 13px;
+            color: #b91c1c;
+            font-family: monospace;
+            word-break: break-word;
+        }
+        .note {
+            margin-top: 20px;
+            padding: 16px;
+            background: #f9fafb;
+            border-radius: 10px;
+            font-size: 14px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+        <h1>Connection Failed</h1>
+        <p>We were unable to connect your Google account.</p>
+        <div class="reason">{error_reason}</div>
+        <div class="note">
+            Please close this window and try again. If the issue persists, contact support.
+        </div>
+    </div>
+</body>
+</html>
